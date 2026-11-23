@@ -733,40 +733,60 @@ export function LoginPage({
           )}
         </AnimatePresence>
 
-        {/* Downward Small Links: Patient Portal & Admin */}
+        {/* Dedicated Role Dashboard Quick Sign-In Bar */}
         {authMode !== 'admin' && (
-          <div className="mt-8 pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-center gap-4 text-center">
-            <button
-              type="button"
-              onClick={() => {
-                onLogin('cashier', {
-                  id: 'pat-portal-demo',
-                  name: 'Chinedu Okafor',
-                  email: 'chinedu.okafor@tekilab.io',
-                  role: 'Patient (Portal Account)',
-                  department: 'Patient Portal',
-                  mrn: 'TK-PAT-10421'
-                });
-                toast.success('Signed into TekiLab Patient Portal');
-              }}
-              className="text-xs text-blue-400 hover:text-blue-300 font-semibold transition-colors cursor-pointer inline-flex items-center gap-1.5"
-            >
-              <UserIcon className="w-3.5 h-3.5" />
-              <span>Patient Portal (Results &amp; Online Booking)</span>
-            </button>
-            <span className="hidden sm:inline text-slate-700">·</span>
-            <button
-              type="button"
-              onClick={() => {
-                setAuthMode('admin');
-                setAuthNotice({ status: 'idle', message: '' });
-                if (onNavigateToAdmin) onNavigateToAdmin();
-              }}
-              className="text-xs text-slate-400 hover:text-amber-400 font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
-              <span>Login as admin</span>
-            </button>
+          <div className="mt-6 pt-5 border-t border-white/10 space-y-3">
+            <div className="text-[11px] font-semibold uppercase tracking-wider text-slate-400 text-center">
+              Quick Access — Dedicated User Dashboards
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { label: 'Patient Portal', role: 'Patient (Portal Account)', name: 'Chinedu Okafor', email: 'chinedu.okafor@tekilab.io', dept: 'Patient Portal', primary: true },
+                { label: 'Lab Scientist', role: 'Medical Lab Scientist', name: 'Tunde Adeyemi', email: 'tunde@tekilab.io', dept: 'Laboratory' },
+                { label: 'Lead Scientist', role: 'Lead Lab Scientist / Pathologist', name: 'MLS Ibrahim Musa', email: 'ibrahim@tekilab.io', dept: 'Laboratory' },
+                { label: 'Receptionist', role: 'Front Desk / Receptionist', name: 'Grace Olatunji', email: 'grace@tekilab.io', dept: 'Reception' },
+                { label: 'Doctor Consult', role: 'Consulting Doctor', name: 'Dr. Zainab Mohammed', email: 'zainab@tekilab.io', dept: 'Doctor Consultation' },
+                { label: 'Branch Manager', role: 'Branch Lab Manager', name: 'Chidinma Nwosu', email: 'chidinma@tekilab.io', dept: 'Laboratory' }
+              ].map((preset) => (
+                <button
+                  key={preset.label}
+                  type="button"
+                  onClick={() => {
+                    onLogin(preset.role.includes('Manager') ? 'merchant' : 'cashier', {
+                      id: `demo-${preset.label.toLowerCase().replace(/\s+/g, '-')}`,
+                      name: preset.name,
+                      email: preset.email,
+                      role: preset.role,
+                      department: preset.dept,
+                      mrn: preset.label === 'Patient Portal' ? 'TK-PAT-10421' : undefined
+                    });
+                    toast.success(`Signed in to ${preset.label} Dashboard`);
+                  }}
+                  className={`py-2 px-3 rounded-xl text-xs font-semibold transition-all cursor-pointer border ${
+                    preset.primary
+                      ? 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 col-span-2'
+                      : 'bg-white/5 hover:bg-white/10 text-slate-200 border-white/10'
+                  }`}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+
+            <div className="pt-2 text-center">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('admin');
+                  setAuthNotice({ status: 'idle', message: '' });
+                  if (onNavigateToAdmin) onNavigateToAdmin();
+                }}
+                className="text-xs text-slate-400 hover:text-amber-400 font-medium transition-colors cursor-pointer inline-flex items-center gap-1.5"
+              >
+                <ShieldCheck className="w-3.5 h-3.5 text-amber-400" />
+                <span>Executive CEO / Admin Portal</span>
+              </button>
+            </div>
           </div>
         )}
 

@@ -190,6 +190,12 @@ function AppShell() {
   const { unreadCount } = useNotifications();
   const [isCommHubOpen, setIsCommHubOpen] = useState(false);
   const pwa = usePWA();
+
+  useEffect(() => {
+    if (typeof document !== 'undefined') {
+      document.title = 'TekiLab — SaaS Laboratory Information Management System (LIMS)';
+    }
+  }, []);
   const getIsAdminUrl = () => {
     if (typeof window === 'undefined') return false;
     const p = window.location.pathname.toLowerCase();
@@ -695,6 +701,41 @@ function AppShell() {
     );
   }
 
+  // Dedicated Standalone Patient Dashboard Shell — Patients never see staff menus
+  const activeRoleDef = getRoleDefinition(currentUser?.role);
+  if (isLoggedIn && activeRoleDef.id === 'patient') {
+    return (
+      <>
+        <Toaster position="top-right" richColors />
+        <PatientPortalView
+          standalone={true}
+          currentUser={currentUser}
+          labOrders={labOrders}
+          onLogout={handleLogout}
+          onUserUpdate={(u) => setCurrentUser(u)}
+          onOnlineBookingCreated={(booking) => {
+            const newTicket: any = {
+              id: `q-${Date.now()}`,
+              ticketNumber: `ONL-${Math.floor(100 + Math.random() * 899)}`,
+              patientId: currentUser?.id || `pat-${Date.now()}`,
+              patientName: booking.patientName,
+              mrn: currentUser?.mrn || `TK-${Math.floor(10000 + Math.random() * 89999)}`,
+              department: 'Reception',
+              orderSource: 'ONLINE',
+              status: 'Waiting',
+              priority: 'Priority',
+              issuedAt: new Date().toISOString(),
+              notes: `Online Paid (${booking.paymentRef}): ${booking.tests.map((t) => t.name).join(', ')}`
+            };
+            const nextQ = [newTicket, ...queueTickets];
+            setQueueTickets(nextQ);
+            localStorage.setItem('tm_queue_tickets', JSON.stringify(nextQ));
+          }}
+        />
+      </>
+    );
+  }
+
   // TekiLab LIMS-First Master Navigation — Auxiliary modules dynamically muted via Feature Toggle Engine
   const masterSyncedSidebar = [
     { 
@@ -1035,26 +1076,42 @@ function AppShell() {
 
             <div className="p-3 border-t border-slate-800/80 shrink-0 transition-all bg-[#0B0F19]">
               {isSidebarOpen ? (
-                <div className="bg-slate-800/40 rounded-xl p-3 border border-slate-700/50">
-                  <p className="text-xs text-slate-400 font-medium mb-1 flex items-center gap-1.5">
-                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
-                    Terminal {role}
-                  </p>
-                  <p className="text-white text-xs font-semibold truncate">Central Hub - 01</p>
-                  <div className="mt-2.5 grid grid-cols-2 gap-1.5">
-                    <button 
-                      onClick={() => setRole('merchant')}
-                      className={`py-1 text-xs font-medium rounded-md transition-all ${role === 'merchant' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-700/70 text-slate-300 hover:bg-slate-700'}`}
-                    >
-                      Manager
-                    </button>
-                    <button 
-                      onClick={() => setRole('cashier')}
-                      className={`py-1 text-xs font-medium rounded-md transition-all ${role === 'cashier' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-700/70 text-slate-300 hover:bg-slate-700'}`}
-                    >
-                      Cashier
-                    </button>
+                <div className="bg-slate-800/40 rounded-xl p-3 border border-slate-700/50 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[11px] text-slate-400 font-medium flex items-center gap-1.5 truncate">
+                      <span className="w-1.5 h-1.5 bg-blue-500 rounded-full shrink-0"></span>
+                      {activeRoleDef.shortLabel}
+                    </p>
+                    <span className="text-[10px] font-mono text-blue-400">{activeRoleDef.department}</span>
                   </div>
+                  <select
+                    value={activeRoleDef.id}
+                    onChange={(e) => {
+                      const nextDef = getRoleDefinition(e.target.value);
+                      const updatedUser = {
+                        ...(currentUser || { id: 'usr-demo', name: 'TekiLab User', email: 'user@tekilab.io' }),
+                        role: nextDef.label,
+                        department: nextDef.department,
+                        permissions: nextDef.permissions
+                      };
+                      setCurrentUser(updatedUser);
+                      localStorage.setItem('ph_current_user', JSON.stringify(updatedUser));
+                      if (nextDef.id !== 'patient') {
+                        setView((nextDef.defaultView as DashView) || 'rapid_console');
+                      }
+                      toast.success(`Switched to ${nextDef.label} Dashboard`);
+                    }}
+                    className="w-full h-8 px-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-medium outline-none"
+                  >
+                    <option value="ceo">CEO / Executive</option>
+                    <option value="branch_manager">Branch Lab Manager</option>
+                    <option value="lead_lab_scientist">Lead Lab Scientist</option>
+                    <option value="lab_scientist">Medical Lab Scientist</option>
+                    <option value="phlebotomist">Phlebotomist</option>
+                    <option value="receptionist">Front Desk / Receptionist</option>
+                    <option value="doctor">Consulting Doctor</option>
+                    <option value="patient">Patient Portal</option>
+                  </select>
                 </div>
               ) : (
                 <Button 
