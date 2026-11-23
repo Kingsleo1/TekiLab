@@ -4,6 +4,7 @@ import {
   ScanLine,
   Cpu,
   ShieldAlert,
+  ShieldCheck,
   CheckCircle2,
   AlertTriangle,
   Send,
@@ -13,14 +14,18 @@ import {
   FileDown,
   Plus,
   Trash2,
-  Activity,
-  Wrench,
+  Printer,
+  UserPlus,
+  Search,
+  QrCode,
+  ArrowRight,
+  ArrowLeft,
+  Sparkles,
   Copy,
   Check,
   ExternalLink,
-  QrCode,
-  ArrowRight,
-  Lock
+  MessageSquare,
+  Sliders
 } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { toast } from 'sonner';
@@ -37,11 +42,10 @@ import { LabOrder, LabTestCatalogItem, PatientRecord } from '../../types/pharmac
 import {
   AIAnomalyCheckResult,
   InstrumentWebhookPacket,
-  LabEquipmentAsset,
   RapidLabParameter,
   RapidResultDispatchRecord
 } from '../../types/tekilab';
-import { useTenantModules, ModuleGuard } from '../../context/TenantModuleContext';
+import { useTenantModules } from '../../context/TenantModuleContext';
 import { handoffLabResultToPharmacyQueue } from '../../lib/cross-module-handoff';
 import { generateLabReportPDF } from '../../lib/reporting-utils';
 
@@ -50,65 +54,188 @@ interface RapidResultConsoleProps {
   labCatalog: LabTestCatalogItem[];
   patients: PatientRecord[];
   onUpdateLabOrder: (order: LabOrder) => void;
+  onRegisterPatient?: (patient: PatientRecord) => void;
   onNavigate?: (view: string) => void;
   currentUser?: any;
   companyLogo?: string;
 }
 
-const DEFAULT_LAB_EQUIPMENT: LabEquipmentAsset[] = [
+type WorkflowStep = 1 | 2 | 3 | 4 | 5;
+
+interface RapidPanelPreset {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  sampleType: string;
+  tubeColor: string;
+  targetTatMinutes: number;
+  isQualitative?: boolean;
+  parameters: RapidLabParameter[];
+}
+
+const RAPID_TEST_PANELS: RapidPanelPreset[] = [
   {
-    id: 'eq-1',
-    name: 'Sysmex XN-550 Hematology',
-    model: 'XN-550 Automated 6-Part Diff',
-    serialNumber: 'SYS-XN550-01',
-    department: 'Haematology',
-    status: 'Operational',
-    cyclesCompleted: 1420,
-    cycleMaintenanceThreshold: 2000,
-    lastCalibratedAt: '2026-11-18',
-    predictedMaintenanceDate: '2026-12-14',
-    uptimePercent: 99.6
+    id: 'panel-malaria-rdt',
+    code: 'MP-RDT',
+    name: 'Malaria RDT (P. falciparum / Pan)',
+    category: 'Parasitology',
+    sampleType: 'Capillary / Venous Blood',
+    tubeColor: 'Purple (EDTA)',
+    targetTatMinutes: 5,
+    isQualitative: true,
+    parameters: [
+      { name: 'P. falciparum HRP-II Band', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Pan-Malaria pLDH Band', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Control Line (C)', value: 'Valid', unit: 'QC', referenceRange: 'Valid', flag: 'Normal' }
+    ]
   },
   {
-    id: 'eq-2',
-    name: 'Roche Cobas c 311 Chemistry',
-    model: 'Cobas c 311 Clinical Chemistry',
-    serialNumber: 'ROCHE-C311-02',
-    department: 'Clinical Chemistry',
-    status: 'Calibration Due',
-    cyclesCompleted: 1845,
-    cycleMaintenanceThreshold: 2000,
-    lastCalibratedAt: '2026-10-29',
-    predictedMaintenanceDate: '2026-11-26',
-    uptimePercent: 98.4
+    id: 'panel-typhoid-widal',
+    code: 'TYP-RDT',
+    name: 'Typhoid Rapid IgM / Widal',
+    category: 'Serology',
+    sampleType: 'Serum / Whole Blood',
+    tubeColor: 'Red (Plain)',
+    targetTatMinutes: 6,
+    isQualitative: true,
+    parameters: [
+      { name: 'Salmonella Typhi IgM', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Salmonella Typhi O-Titre', value: '1:40', unit: 'Titre', referenceRange: '< 1:80', flag: 'Normal' },
+      { name: 'Salmonella Typhi H-Titre', value: '1:40', unit: 'Titre', referenceRange: '< 1:80', flag: 'Normal' }
+    ]
   },
   {
-    id: 'eq-3',
-    name: 'Mindray BC-5000 Backup Unit',
-    model: 'BC-5000 Auto Hematology',
-    serialNumber: 'MINDRAY-BC5000',
-    department: 'Haematology',
-    status: 'Operational',
-    cyclesCompleted: 640,
-    cycleMaintenanceThreshold: 1500,
-    lastCalibratedAt: '2026-11-20',
-    predictedMaintenanceDate: '2027-01-19',
-    uptimePercent: 99.9
+    id: 'panel-glucose-hba1c',
+    code: 'GLU-A1C',
+    name: 'Blood Glucose & HbA1c Rapid',
+    category: 'Clinical Chemistry',
+    sampleType: 'Fluoride Oxalate Blood',
+    tubeColor: 'Grey (Fl-Ox)',
+    targetTatMinutes: 5,
+    parameters: [
+      { name: 'Fasting Blood Glucose', value: '92', unit: 'mg/dL', referenceRange: '70 - 99', flag: 'Normal' },
+      { name: 'HbA1c', value: '5.3', unit: '%', referenceRange: '4.0 - 5.6', flag: 'Normal' },
+      { name: 'Serum Creatinine (eGFR guard)', value: '0.88', unit: 'mg/dL', referenceRange: '0.60 - 1.20', flag: 'Normal' }
+    ]
   },
   {
-    id: 'eq-4',
-    name: 'Abbott ARCHITECT i1000SR',
-    model: 'Chemiluminescent Immunoassay',
-    serialNumber: 'ABBOTT-I1000SR',
-    department: 'Immunology & Serology',
-    status: 'Maintenance Scheduled',
-    cyclesCompleted: 2390,
-    cycleMaintenanceThreshold: 2500,
-    lastCalibratedAt: '2026-10-15',
-    predictedMaintenanceDate: '2026-11-24',
-    uptimePercent: 96.8
+    id: 'panel-cbc-rapid',
+    code: 'CBC-5P',
+    name: 'Complete Blood Count (CBC) Rapid',
+    category: 'Haematology',
+    sampleType: 'Venous Blood',
+    tubeColor: 'Purple (EDTA)',
+    targetTatMinutes: 5,
+    parameters: [
+      { name: 'Hemoglobin (Hb)', value: '13.8', unit: 'g/dL', referenceRange: '12.0 - 17.0', flag: 'Normal' },
+      { name: 'White Blood Cell (WBC)', value: '6.8', unit: 'x10^9/L', referenceRange: '4.0 - 11.0', flag: 'Normal' },
+      { name: 'Platelets', value: '245', unit: 'x10^9/L', referenceRange: '150 - 450', flag: 'Normal' },
+      { name: 'Packed Cell Volume (PCV)', value: '41', unit: '%', referenceRange: '36 - 50', flag: 'Normal' }
+    ]
+  },
+  {
+    id: 'panel-lipid',
+    code: 'LIP-4',
+    name: 'Lipid Profile Rapid',
+    category: 'Clinical Chemistry',
+    sampleType: 'Serum',
+    tubeColor: 'Gold (SST)',
+    targetTatMinutes: 7,
+    parameters: [
+      { name: 'Total Cholesterol', value: '182', unit: 'mg/dL', referenceRange: '< 200', flag: 'Normal' },
+      { name: 'LDL Cholesterol', value: '96', unit: 'mg/dL', referenceRange: '< 100', flag: 'Normal' },
+      { name: 'HDL Cholesterol', value: '54', unit: 'mg/dL', referenceRange: '> 40', flag: 'Normal' },
+      { name: 'Triglycerides', value: '128', unit: 'mg/dL', referenceRange: '< 150', flag: 'Normal' }
+    ]
+  },
+  {
+    id: 'panel-urine-10',
+    code: 'URI-10',
+    name: 'Urine Dipstick 10-Param',
+    category: 'Urinalysis',
+    sampleType: 'Midstream Urine',
+    tubeColor: 'Sterile Universal Cup',
+    targetTatMinutes: 5,
+    isQualitative: true,
+    parameters: [
+      { name: 'Leukocyte Esterase', value: 'Negative', unit: 'Dipstick', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Nitrite', value: 'Negative', unit: 'Dipstick', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Urine Protein', value: 'Negative', unit: 'Dipstick', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Urine Glucose', value: 'Negative', unit: 'Dipstick', referenceRange: 'Negative', flag: 'Negative' }
+    ]
+  },
+  {
+    id: 'panel-covid-flu',
+    code: 'RESP-3',
+    name: 'COVID-19 / Flu A+B Rapid Swab',
+    category: 'Virology',
+    sampleType: 'Nasopharyngeal Swab',
+    tubeColor: 'Viral Transport Buffer',
+    targetTatMinutes: 8,
+    isQualitative: true,
+    parameters: [
+      { name: 'SARS-CoV-2 Antigen', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Influenza A Antigen', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Influenza B Antigen', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' }
+    ]
+  },
+  {
+    id: 'panel-hep-bc',
+    code: 'HEP-BC',
+    name: 'Hepatitis B (HBsAg) & C Rapid',
+    category: 'Serology',
+    sampleType: 'Serum / Plasma',
+    tubeColor: 'Red (Plain)',
+    targetTatMinutes: 6,
+    isQualitative: true,
+    parameters: [
+      { name: 'HBsAg Rapid', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
+      { name: 'Anti-HCV Rapid', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' }
+    ]
+  },
+  {
+    id: 'panel-pregnancy',
+    code: 'BHCG',
+    name: 'Pregnancy β-hCG Rapid',
+    category: 'Immunoassay',
+    sampleType: 'Urine / Serum',
+    tubeColor: 'Sterile Cup / SST',
+    targetTatMinutes: 5,
+    isQualitative: true,
+    parameters: [
+      { name: 'Qualitative β-hCG', value: 'Negative', unit: 'mIU/mL', referenceRange: 'Negative (<5)', flag: 'Negative' }
+    ]
+  },
+  {
+    id: 'panel-sti',
+    code: 'STI-3',
+    name: 'STI Rapid Screening (HIV / Syphilis)',
+    category: 'Serology',
+    sampleType: 'Whole Blood / Serum',
+    tubeColor: 'Purple (EDTA)',
+    targetTatMinutes: 8,
+    isQualitative: true,
+    parameters: [
+      { name: 'HIV 1/2 Antibody', value: 'Negative', unit: 'Qualitative', referenceRange: 'Non-Reactive', flag: 'Negative' },
+      { name: 'Syphilis (Treponema pallidum)', value: 'Negative', unit: 'Qualitative', referenceRange: 'Non-Reactive', flag: 'Negative' }
+    ]
   }
 ];
+
+const STEPS: { num: WorkflowStep; label: string; sub: string }[] = [
+  { num: 1, label: 'Registration', sub: '30–60s' },
+  { num: 2, label: 'Sample', sub: '30s' },
+  { num: 3, label: 'AI Analysis', sub: '2–5m' },
+  { num: 4, label: 'Approval', sub: '15–30s' },
+  { num: 5, label: 'Delivery', sub: '30s' }
+];
+
+function generateSampleUid(): string {
+  const yr = new Date().getFullYear();
+  const num = Math.floor(10000 + Math.random() * 89999);
+  return `TK-${yr}-${num}`;
+}
 
 function formatElapsedTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -148,6 +275,7 @@ function SampleScannerModal({
         (decodedText) => {
           onDecoded(decodedText.trim());
           scanner.clear().catch(() => {});
+          scannerRef.current = null;
           onOpenChange(false);
         },
         () => {}
@@ -166,26 +294,17 @@ function SampleScannerModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md bg-white border border-neutral-200 p-0 overflow-hidden">
-        <div className="bg-neutral-950 text-white px-5 py-4 border-b border-neutral-800">
-          <DialogHeader>
-            <DialogTitle className="text-base font-semibold text-white">
-              Scan Sample Barcode or QR
-            </DialogTitle>
-            <DialogDescription className="text-xs text-neutral-400">
-              Center the specimen tube barcode or accession QR label within the optical frame.
-            </DialogDescription>
-          </DialogHeader>
-        </div>
-        <div className="p-5 space-y-3">
-          <div
-            id="tekilab-sample-scanner"
-            className="rounded-lg overflow-hidden border border-neutral-200 bg-neutral-50"
-          />
-          <p className="text-xs text-neutral-500 text-center font-mono">
-            Supported: Code 128 · QR · EAN-13 · DataMatrix
-          </p>
-        </div>
+      <DialogContent className="sm:max-w-md bg-white border border-neutral-200">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2 text-neutral-950">
+            <ScanLine className="w-5 h-5 text-blue-600" />
+            Scan Specimen QR / Barcode
+          </DialogTitle>
+          <DialogDescription className="text-neutral-600">
+            Verify tube custody or load an existing accession barcode (`TK-YYYY-XXXXX`).
+          </DialogDescription>
+        </DialogHeader>
+        <div id="tekilab-sample-scanner" className="w-full min-h-[260px] rounded-xl overflow-hidden bg-neutral-50 border border-neutral-200" />
       </DialogContent>
     </Dialog>
   );
@@ -193,356 +312,289 @@ function SampleScannerModal({
 
 export function RapidResultConsole({
   labOrders,
-  labCatalog,
   patients,
   onUpdateLabOrder,
+  onRegisterPatient,
   onNavigate,
   currentUser,
-  companyLogo = '/logo.png?v=4'
+  companyLogo = '/logo.png?v=5'
 }: RapidResultConsoleProps) {
   const { config, isModuleEnabled } = useTenantModules();
+  const isPharmacyActive = isModuleEnabled('pharmacy');
 
-  // Left-rail sub-panel mode
-  const [leftTab, setLeftTab] = useState<'queue' | 'instruments' | 'maintenance'>('queue');
-  const [scanInput, setScanInput] = useState('');
-  const [isScannerOpen, setIsScannerOpen] = useState(false);
-
-  // Active specimen & patient state
-  const initialOrder = labOrders[0] || null;
-  const [activeOrderId, setActiveOrderId] = useState<string>(initialOrder?.id || '');
-  const [accessionNumber, setAccessionNumber] = useState<string>(
-    initialOrder?.accessionNumber || 'ACC-2026-9041'
-  );
-  const [sampleBarcode, setSampleBarcode] = useState<string>(
-    initialOrder ? `TLAB-${initialOrder.accessionNumber.slice(-4)}-EDTA` : 'TLAB-9041-EDTA'
-  );
-  const [patientId, setPatientId] = useState<string>(
-    initialOrder?.patientId || patients[0]?.id || 'PAT-001'
-  );
-  const [patientName, setPatientName] = useState<string>(
-    initialOrder?.patientName || patients[0]?.fullName || 'Chinedu Okafor'
-  );
-  const [patientMrn, setPatientMrn] = useState<string>(
-    initialOrder?.mrn || patients[0]?.mrn || 'TL-2026-0101'
-  );
-  const [patientPhone, setPatientPhone] = useState<string>(
-    initialOrder?.patientPhone || patients[0]?.phone || '+234 803 123 4567'
-  );
-  const [testName, setTestName] = useState<string>(
-    initialOrder?.testName || 'Complete Blood Count (CBC) + Malaria Parasite'
-  );
-  const [sampleType, setSampleType] = useState<string>(
-    initialOrder?.sampleType || 'EDTA Venous Blood'
-  );
-  const [intakeSource, setIntakeSource] = useState<
-    'manual_entry' | 'barcode_scan' | 'instrument_webhook'
-  >('barcode_scan');
-  const [activeInstrumentId, setActiveInstrumentId] = useState<string>('');
-
-  // Structured analyte parameters
-  const [parameters, setParameters] = useState<RapidLabParameter[]>([
-    { name: 'Hemoglobin (Hb)', value: '9.4', unit: 'g/dL', referenceRange: '13.0 - 17.0', flag: 'Low' },
-    { name: 'White Blood Cell (WBC)', value: '14.8', unit: 'x10^9/L', referenceRange: '4.0 - 11.0', flag: 'High' },
-    { name: 'Platelets', value: '112', unit: 'x10^9/L', referenceRange: '150 - 450', flag: 'Low' },
-    {
-      name: 'Malaria Parasite (P. falciparum)',
-      value: 'Positive (+++)',
-      unit: 'Trophozoites',
-      referenceRange: 'Negative',
-      flag: 'Positive'
-    }
-  ]);
-
-  // 5-Minute SLA stopwatch
+  // Stepper & SLA Timer
+  const [step, setStep] = useState<WorkflowStep>(1);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
-  const [timerRunning, setTimerRunning] = useState<boolean>(true);
+  const [timerActive, setTimerActive] = useState<boolean>(true);
 
-  // Instrument API Hub packets
-  const [instrumentPackets, setInstrumentPackets] = useState<InstrumentWebhookPacket[]>([]);
-  const [isLoadingInstruments, setIsLoadingInstruments] = useState(false);
-  const [isSimulatingPush, setIsSimulatingPush] = useState(false);
+  // Step 1: Registration
+  const [patientSearch, setPatientSearch] = useState('');
+  const [selectedPatientId, setSelectedPatientId] = useState<string>('');
+  const [patientName, setPatientName] = useState('');
+  const [patientAge, setPatientAge] = useState('32');
+  const [patientGender, setPatientGender] = useState<'Male' | 'Female'>('Male');
+  const [patientPhone, setPatientPhone] = useState('');
+  const [patientAllergies, setPatientAllergies] = useState('');
+  const [selectedPanelId, setSelectedPanelId] = useState<string>(RAPID_TEST_PANELS[0].id);
 
-  // AI Anomaly Check state
-  const [isAnalyzingAI, setIsAnalyzingAI] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
+  // Step 2: Sample & Custody
+  const [sampleUid, setSampleUid] = useState<string>(() => generateSampleUid());
+  const [sampleType, setSampleType] = useState<string>(RAPID_TEST_PANELS[0].sampleType);
+  const [tubeColor, setTubeColor] = useState<string>(RAPID_TEST_PANELS[0].tubeColor);
+  const [collectionSite, setCollectionSite] = useState<string>('Express Phlebotomy Bay 1');
+  const [storageLocation, setStorageLocation] = useState<string>('Rapid Bench A');
+  const [custodyVerified, setCustodyVerified] = useState<boolean>(false);
+  const [isScannerOpen, setIsScannerOpen] = useState<boolean>(false);
+
+  // Step 3: Analyzer Workstation & AI
+  const [parameters, setParameters] = useState<RapidLabParameter[]>(
+    RAPID_TEST_PANELS[0].parameters.map((p) => ({ ...p }))
+  );
+  const [intakeSource, setIntakeSource] = useState<'manual_entry' | 'barcode_scan' | 'instrument_webhook'>('manual_entry');
+  const [instrumentId, setInstrumentId] = useState<string>('');
+  const [instrumentInbox, setInstrumentInbox] = useState<InstrumentWebhookPacket[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState<boolean>(false);
   const [aiReport, setAiReport] = useState<AIAnomalyCheckResult | null>(null);
 
-  // WhatsApp Dispatch & Persistence state
-  const [isDispatching, setIsDispatching] = useState(false);
-  const [dispatchRecord, setDispatchRecord] = useState<RapidResultDispatchRecord | null>(null);
-  const [copiedWhatsApp, setCopiedWhatsApp] = useState(false);
+  // Step 4: Approval
+  const [approvedBy, setApprovedBy] = useState<string>(
+    currentUser?.name || currentUser?.displayName || 'Dr. Kingsley Agu (Lead Scientist)'
+  );
+  const [approvalNotes, setApprovalNotes] = useState<string>('');
+  const [isApproved, setIsApproved] = useState<boolean>(false);
+  const [approvalMode, setApprovalMode] = useState<'AUTO_VERIFIED' | 'PATHOLOGIST_SIGNED' | null>(null);
 
-  // Cross-module Pharmacy Handoff state
-  const [isHandingOff, setIsHandingOff] = useState(false);
-  const [handoffId, setHandoffId] = useState<string | null>(null);
+  // Step 5: Delivery
+  const [isDispatching, setIsDispatching] = useState<boolean>(false);
+  const [dispatchResult, setDispatchResult] = useState<{
+    pdfReportNumber: string;
+    whatsappUrl: string;
+    slaMet: boolean;
+    turnaroundSeconds: number;
+  } | null>(null);
+  const [isHandingOffRx, setIsHandingOffRx] = useState<boolean>(false);
+  const [rxHandoffResult, setRxHandoffResult] = useState<{
+    handoffId: string;
+    deliveryMode: 'PHARMACY_POS_QUEUE' | 'BACKGROUND_E_PRESCRIPTION';
+    message: string;
+  } | null>(null);
+  const [copiedUid, setCopiedUid] = useState<boolean>(false);
 
-  const slaTargetSeconds = (config.slaConfig.rapidTurnaroundTargetMinutes || 5) * 60;
-  const maxSlaSeconds = (config.slaConfig.maxSlaMinutes || 10) * 60;
+  // Recent dispatches history
+  const [recentDispatches, setRecentDispatches] = useState<RapidResultDispatchRecord[]>(() => {
+    try {
+      const saved = localStorage.getItem('tekilab_rapid_dispatches_v2');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
 
+  const selectedPanel = useMemo(
+    () => RAPID_TEST_PANELS.find((p) => p.id === selectedPanelId) || RAPID_TEST_PANELS[0],
+    [selectedPanelId]
+  );
+
+  // Live SLA elapsed timer
   useEffect(() => {
-    if (!timerRunning) return;
-    const id = setInterval(() => {
-      setElapsedSeconds((prev) => prev + 1);
-    }, 1000);
+    if (!timerActive) return;
+    const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
     return () => clearInterval(id);
-  }, [timerRunning]);
+  }, [timerActive]);
 
-  const fetchInstrumentInbox = async () => {
-    setIsLoadingInstruments(true);
+  // Fetch Diagnostic Instrument Webhook Inbox
+  const refreshInstrumentInbox = async () => {
     try {
       const res = await fetch('/api/lims/instruments/inbox');
       if (res.ok) {
         const json = await res.json();
         if (Array.isArray(json?.packets)) {
-          setInstrumentPackets(json.packets);
+          setInstrumentInbox(json.packets);
         }
       }
     } catch {
-      // Ignore transient network errors
-    } finally {
-      setIsLoadingInstruments(false);
+      // Offline-safe
     }
   };
 
   useEffect(() => {
-    fetchInstrumentInbox();
+    refreshInstrumentInbox();
   }, []);
 
-  const matchedPatient = useMemo(
-    () =>
-      patients.find(
+  const filteredPatients = useMemo(() => {
+    const q = patientSearch.trim().toLowerCase();
+    if (!q) return patients.slice(0, 5);
+    return patients
+      .filter(
         (p) =>
-          p.id === patientId ||
-          p.mrn === patientMrn ||
-          p.fullName.toLowerCase() === patientName.toLowerCase()
-      ),
-    [patients, patientId, patientMrn, patientName]
-  );
+          p.fullName?.toLowerCase().includes(q) ||
+          p.phone?.toLowerCase().includes(q) ||
+          p.mrn?.toLowerCase().includes(q)
+      )
+      .slice(0, 6);
+  }, [patients, patientSearch]);
 
-  // Load an existing LabOrder into the Rapid Result Console
-  const loadOrderIntoConsole = (order: LabOrder, source: 'barcode_scan' | 'manual_entry' = 'barcode_scan') => {
-    const pat = patients.find((p) => p.id === order.patientId || p.mrn === order.mrn);
-    const catalogItem = labCatalog.find((c) => c.id === order.testId);
-
-    setActiveOrderId(order.id);
-    setAccessionNumber(order.accessionNumber);
-    setSampleBarcode(`TLAB-${order.accessionNumber.replace(/[^0-9A-Z]/gi, '').slice(-6)}`);
-    setPatientId(order.patientId);
-    setPatientName(order.patientName);
-    setPatientMrn(order.mrn);
-    setPatientPhone(pat?.phone || pat?.whatsapp || order.patientPhone || '+234 803 123 4567');
-    setTestName(order.testName);
-    setSampleType(order.sampleType || 'Venous Blood');
-    setIntakeSource(source);
-    setActiveInstrumentId('');
-    setAiReport(null);
-    setAiError(null);
-    setDispatchRecord(null);
-    setHandoffId(null);
-    setElapsedSeconds(0);
-    setTimerRunning(true);
-
-    if (order.results && Object.keys(order.results).length > 0) {
-      setParameters(
-        Object.entries(order.results).map(([name, val]) => ({
-          name,
-          value: String(val.value ?? ''),
-          unit: val.unit || '',
-          referenceRange: val.referenceRange || 'Normal',
-          flag: val.flag || 'Normal'
-        }))
-      );
-    } else if (catalogItem?.parameters && catalogItem.parameters.length > 0) {
-      setParameters(
-        catalogItem.parameters.map((p) => ({
-          name: p.name,
-          value: '',
-          unit: p.unit || '',
-          referenceRange: p.referenceRange || 'Normal',
-          flag: 'Normal'
-        }))
-      );
-    } else {
-      setParameters([
-        { name: 'Primary Analyte Reading', value: '', unit: '', referenceRange: 'Within Reference', flag: 'Normal' }
-      ]);
-    }
-
-    toast.success(`Loaded sample ${order.accessionNumber} — 5-minute SLA timer started.`);
+  const handleSelectExistingPatient = (p: PatientRecord) => {
+    setSelectedPatientId(p.id);
+    setPatientName(p.fullName);
+    setPatientPhone(p.phone || '');
+    const g = (p as any).gender || (p as any).sex;
+    setPatientGender(g === 'Female' ? 'Female' : 'Male');
+    setPatientAllergies((p.allergies || []).join(', '));
+    toast.success(`Selected ${p.fullName} (${p.mrn})`);
   };
 
-  // Load a live analyzer webhook packet directly into the console
-  const loadInstrumentPacket = (pkt: InstrumentWebhookPacket) => {
-    const existingOrder = labOrders.find(
-      (o) => o.accessionNumber.toLowerCase() === pkt.accessionNumber.toLowerCase()
-    );
-    const pat =
-      patients.find((p) => p.id === existingOrder?.patientId) ||
-      patients.find((p) => pkt.patientName && p.fullName.toLowerCase().includes(pkt.patientName.toLowerCase())) ||
-      patients[0];
+  const handleSelectPanel = (panel: RapidPanelPreset) => {
+    setSelectedPanelId(panel.id);
+    setSampleType(panel.sampleType);
+    setTubeColor(panel.tubeColor);
+    setParameters(panel.parameters.map((p) => ({ ...p })));
+    setAiReport(null);
+    setIsApproved(false);
+    setApprovalMode(null);
+  };
 
-    setActiveOrderId(existingOrder?.id || '');
-    setAccessionNumber(pkt.accessionNumber);
-    setSampleBarcode(pkt.sampleBarcode);
-    setPatientId(pat?.id || 'PAT-INST');
-    setPatientName(pkt.patientName || pat?.fullName || 'Walk-in Diagnostic Patient');
-    setPatientMrn(pat?.mrn || 'TL-2026-INST');
-    setPatientPhone(pat?.phone || pat?.whatsapp || '+234 803 123 4567');
-    setTestName(pkt.testName);
-    setSampleType('Automated Analyzer Specimen');
+  // Step 1 -> Step 2
+  const handleCompleteRegistration = () => {
+    if (!patientName.trim()) {
+      toast.error('Enter patient full name or select an existing patient.');
+      return;
+    }
+
+    const uid = generateSampleUid();
+    setSampleUid(uid);
+    setElapsedSeconds(0);
+    setTimerActive(true);
+    setCustodyVerified(false);
+    setAiReport(null);
+    setIsApproved(false);
+    setApprovalMode(null);
+    setDispatchResult(null);
+    setRxHandoffResult(null);
+
+    let pid = selectedPatientId;
+    if (!pid) {
+      pid = `pat-${Date.now()}`;
+      setSelectedPatientId(pid);
+      onRegisterPatient?.({
+        id: pid,
+        mrn: `MRN-${Math.floor(10000 + Math.random() * 89999)}`,
+        fullName: patientName.trim(),
+        phone: patientPhone.trim() || '08030000000',
+        gender: patientGender,
+        dob: `${new Date().getFullYear() - (Number(patientAge) || 30)}-01-01`,
+        allergies: patientAllergies
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        chronicConditions: [],
+        createdAt: new Date().toISOString()
+      } as any);
+    }
+
+    toast.success(`Express Accession Created: ${uid}`, {
+      description: `${patientName.trim()} — ${selectedPanel.name}`
+    });
+    setStep(2);
+  };
+
+  // Pull automated analyzer packet into Step 3
+  const handleLoadInstrumentPacket = (pkt: InstrumentWebhookPacket) => {
+    if (pkt.patientName && !patientName) setPatientName(pkt.patientName);
+    setSampleUid(pkt.accessionNumber || sampleUid);
+    setParameters(pkt.parameters.map((p) => ({ ...p })));
     setIntakeSource('instrument_webhook');
-    setActiveInstrumentId(`${pkt.instrumentId} (${pkt.instrumentModel})`);
-    setParameters(pkt.parameters);
+    setInstrumentId(pkt.instrumentId);
     setAiReport(null);
-    setAiError(null);
-    setDispatchRecord(null);
-    setHandoffId(null);
-    setElapsedSeconds(0);
-    setTimerRunning(true);
-
-    toast.success(`Imported analyzer telemetry from ${pkt.instrumentId} for ${pkt.accessionNumber}.`);
+    toast.success(`Synced live readings from ${pkt.instrumentModel}`);
   };
 
-  // Lookup by scanned barcode or accession number
-  const handleBarcodeLookup = (code: string) => {
-    const clean = code.trim();
-    if (!clean) return;
-    setScanInput(clean);
-
-    // 1. Check live instrument inbox first
-    const matchedPacket = instrumentPackets.find(
-      (p) =>
-        p.accessionNumber.toLowerCase() === clean.toLowerCase() ||
-        p.sampleBarcode.toLowerCase() === clean.toLowerCase()
+  // Update individual parameter
+  const handleParamChange = (idx: number, field: keyof RapidLabParameter, val: string) => {
+    setParameters((prev) =>
+      prev.map((row, i) => {
+        if (i !== idx) return row;
+        const next = { ...row, [field]: val };
+        if (field === 'value') {
+          const lower = val.toLowerCase();
+          if (lower.includes('pos') || lower.includes('react')) next.flag = 'Positive';
+          else if (lower.includes('neg') || lower.includes('non-react')) next.flag = 'Negative';
+        }
+        return next;
+      })
     );
-    if (matchedPacket) {
-      loadInstrumentPacket(matchedPacket);
-      return;
-    }
-
-    // 2. Check existing lab orders
-    const matchedOrder = labOrders.find(
-      (o) =>
-        o.accessionNumber.toLowerCase().includes(clean.toLowerCase()) ||
-        o.mrn.toLowerCase() === clean.toLowerCase() ||
-        o.patientName.toLowerCase().includes(clean.toLowerCase())
-    );
-    if (matchedOrder) {
-      loadOrderIntoConsole(matchedOrder, 'barcode_scan');
-      return;
-    }
-
-    // 3. Treat as newly scanned walk-in rapid specimen
-    setAccessionNumber(clean.toUpperCase());
-    setSampleBarcode(clean.toUpperCase());
-    setIntakeSource('barcode_scan');
-    setAiReport(null);
-    setDispatchRecord(null);
-    setHandoffId(null);
-    setElapsedSeconds(0);
-    setTimerRunning(true);
-    toast.info(`New specimen barcode ${clean.toUpperCase()} initialized in Rapid Console.`);
   };
 
-  // Push a real simulated packet into POST /api/lims/instruments/webhook
-  const handleSimulateAnalyzerWebhook = async () => {
-    setIsSimulatingPush(true);
+  // Step 3: Run TekiLab AI Analysis
+  const handleRunAIAnalysis = async () => {
+    setIsAnalyzing(true);
     try {
-      const codeSuffix = Math.floor(4000 + Math.random() * 5000);
-      const res = await fetch('/api/lims/instruments/webhook', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          instrumentId: 'ROCHE-C311-02',
-          instrumentModel: 'Roche Cobas c 311 Clinical Chemistry',
-          accessionNumber: `ACC-2026-${codeSuffix}`,
-          sampleBarcode: `TLAB-${codeSuffix}-SERUM`,
-          patientName: patients[0]?.fullName || 'Ngozi Adeyemi',
-          testName: 'Acute Bacterial UTI & Renal Urinalysis Panel',
-          parameters: [
-            { name: 'Urine Leukocyte Esterase', value: 'Positive (3+)', unit: 'Cells/uL', referenceRange: 'Negative', flag: 'Positive' },
-            { name: 'Urine Nitrites', value: 'Positive', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Positive' },
-            { name: 'C-Reactive Protein (CRP)', value: '68.4', unit: 'mg/L', referenceRange: '< 5.0', flag: 'High' },
-            { name: 'Serum Creatinine', value: '1.04', unit: 'mg/dL', referenceRange: '0.60 - 1.20', flag: 'Normal' }
-          ]
-        })
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || 'Webhook push failed');
-      }
-      const data = await res.json();
-      await fetchInstrumentInbox();
-      if (data?.packet) {
-        loadInstrumentPacket(data.packet);
-      }
-    } catch (err: any) {
-      toast.error(err?.message || 'Failed to push analyzer webhook packet.');
-    } finally {
-      setIsSimulatingPush(false);
-    }
-  };
-
-  // Step 3: Run Real Server-Side Gemini AI Anomaly Check
-  const handleRunAIAnomalyCheck = async () => {
-    const nonEmptyParams = parameters.filter((p) => p.name.trim() && String(p.value).trim());
-    if (nonEmptyParams.length === 0) {
-      toast.error('Enter at least one measured parameter value before running AI validation.');
-      return;
-    }
-
-    setIsAnalyzingAI(true);
-    setAiError(null);
-
-    try {
-      const ageYears = matchedPatient?.dob
-        ? Math.max(0, new Date().getFullYear() - new Date(matchedPatient.dob).getFullYear())
-        : 36;
-
       const res = await fetch('/api/lims/rapid-result/analyze', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          accessionNumber,
-          testName,
+          accessionNumber: sampleUid,
+          testName: selectedPanel.name,
           sampleType,
           patient: {
-            ageYears,
-            sex: matchedPatient?.sex || 'Unknown',
-            allergies: matchedPatient?.allergies || [],
-            chronicConditions: matchedPatient?.chronicConditions || []
+            ageYears: Number(patientAge) || 32,
+            sex: patientGender,
+            allergies: patientAllergies
+              .split(',')
+              .map((s) => s.trim())
+              .filter(Boolean)
           },
-          parameters: nonEmptyParams
+          parameters
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || `AI analysis failed (HTTP ${res.status})`);
+      const json = await res.json();
+      if (!res.ok || !json?.analysis) {
+        throw new Error(json?.error || 'AI analysis failed');
       }
 
-      setAiReport(data.analysis);
-      toast.success(
-        data.analysis.anomalyDetected
-          ? `AI Anomaly Check flagged ${data.analysis.severity.toUpperCase()} findings.`
-          : 'AI Anomaly Check completed: readings within expected baselines.'
-      );
+      const analysis: AIAnomalyCheckResult = json.analysis;
+      setAiReport(analysis);
+      setApprovalNotes(analysis.clinicalSummary);
+
+      // Autonomous Auto-Verification if strictly normal
+      if (!analysis.anomalyDetected && analysis.severity === 'normal') {
+        setIsApproved(true);
+        setApprovalMode('AUTO_VERIFIED');
+        toast.success('AI Auto-Verification Passed (Normal Reference Range)', {
+          description: 'Cleared automatically — ready for immediate delivery.'
+        });
+      } else {
+        setIsApproved(false);
+        setApprovalMode(null);
+        toast.warning(
+          analysis.severity === 'critical'
+            ? 'CRITICAL / PANIC VALUE DETECTED — Pathologist Sign-Off Required'
+            : 'Abnormal Result Flagged — Review & Sign Off in Step 4'
+        );
+      }
+      setStep(4);
     } catch (err: any) {
-      const msg = err?.message || 'Unable to reach Gemini AI validation service.';
-      setAiError(msg);
-      toast.error(msg);
+      toast.error(err?.message || 'Unable to run AI verification.');
     } finally {
-      setIsAnalyzingAI(false);
+      setIsAnalyzing(false);
     }
   };
 
-  // Step 4: Validate, Persist to Astra/Backend, Generate PDF & Trigger WhatsApp Dispatch
-  const handleValidateAndDispatchWhatsApp = async () => {
-    if (!accessionNumber.trim() || !patientName.trim()) {
-      toast.error('Accession number and patient name are required.');
+  // Step 4: Pathologist Sign-off
+  const handleSignOff = () => {
+    if (!approvedBy.trim()) {
+      toast.error('Enter validating scientist / pathologist name.');
       return;
     }
+    setIsApproved(true);
+    setApprovalMode('PATHOLOGIST_SIGNED');
+    toast.success(`Result digitally signed by ${approvedBy}`);
+    setStep(5);
+  };
 
+  // Step 5: Instant PDF + WhatsApp Dispatch
+  const handleInstantDispatch = async () => {
     setIsDispatching(true);
     try {
       const res = await fetch('/api/lims/rapid-result/dispatch', {
@@ -550,952 +602,1106 @@ export function RapidResultConsole({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId: config.tenantId,
-          accessionNumber,
-          sampleBarcode,
-          patientId,
-          patientName,
-          patientMrn,
-          patientPhone,
-          testName,
+          accessionNumber: sampleUid,
+          sampleBarcode: sampleUid,
+          patientId: selectedPatientId || `walkin-${Date.now()}`,
+          patientName: patientName || 'Walk-in Patient',
+          patientMrn: selectedPatientId || 'WALK-IN',
+          patientPhone: patientPhone || '08031234567',
+          testName: selectedPanel.name,
+          category: selectedPanel.category,
           sampleType,
           intakeSource,
-          instrumentId: activeInstrumentId || undefined,
+          instrumentId,
           parameters,
           aiAnomalyReport: aiReport,
-          validatedBy: currentUser?.name || currentUser?.displayName || 'TekiLab Lead Scientist',
-          turnaroundSeconds: Math.max(1, elapsedSeconds)
+          validatedBy: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verification' : approvedBy,
+          turnaroundSeconds: Math.max(elapsedSeconds, 45)
         })
       });
 
-      const data = await res.json();
-      if (!res.ok || !data?.success) {
-        throw new Error(data?.error || 'Dispatch failed');
+      const json = await res.json();
+      if (!res.ok || !json?.success) {
+        throw new Error(json?.error || 'Dispatch failed');
       }
 
-      setTimerRunning(false);
-      setDispatchRecord(data.record);
-
-      // Update parent LabOrder state so LIMS worklist stays in sync
-      const structuredResults: LabOrder['results'] = {};
-      parameters.forEach((p) => {
-        if (p.name.trim()) {
-          structuredResults[p.name] = {
-            value: p.value,
-            unit: p.unit,
-            referenceRange: p.referenceRange,
-            flag: p.flag
-          };
-        }
+      setTimerActive(false);
+      setDispatchResult({
+        pdfReportNumber: json.pdfReportNumber,
+        whatsappUrl: json.whatsappUrl,
+        slaMet: json.slaMet,
+        turnaroundSeconds: Math.max(elapsedSeconds, 45)
       });
 
-      const existingOrder = labOrders.find((o) => o.id === activeOrderId || o.accessionNumber === accessionNumber);
-      if (existingOrder) {
-        onUpdateLabOrder({
-          ...existingOrder,
-          orderStatus: 'RELEASED',
-          sampleStatus: 'Completed',
-          results: structuredResults,
-          likelyIssue: aiReport?.likelyDiagnosis || existingOrder.likelyIssue || 'Verified Result',
-          clinicalInterpretation: aiReport?.clinicalSummary || existingOrder.clinicalInterpretation,
-          validatedByName: currentUser?.name || 'TekiLab Lead Scientist',
-          validatedAt: new Date().toISOString(),
-          releasedAt: new Date().toISOString(),
-          whatsappSentAt: new Date().toISOString(),
-          reportNumber: data.pdfReportNumber
-        });
+      // Persist to lab worklist & local history
+      const mappedResults: Record<string, { value: string; flag: RapidLabParameter['flag'] }> = {};
+      parameters.forEach((p) => {
+        mappedResults[p.name] = { value: p.value, flag: p.flag };
+      });
+
+      onUpdateLabOrder({
+        id: json.record?.id || `lab-${Date.now()}`,
+        accessionNumber: sampleUid,
+        patientId: selectedPatientId || 'walk-in',
+        patientName: patientName || 'Walk-in Patient',
+        mrn: selectedPatientId || 'WALK-IN',
+        testId: selectedPanel.id,
+        testName: selectedPanel.name,
+        category: selectedPanel.category,
+        sampleType,
+        sampleStatus: 'Sample Collected',
+        orderStatus: 'RELEASED',
+        results: mappedResults,
+        likelyIssue: aiReport?.likelyDiagnosis || 'Verified Reference Result',
+        clinicalInterpretation: approvalNotes || aiReport?.clinicalSummary || '',
+        validatedByName: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verify' : approvedBy,
+        validatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString(),
+        priceNaira: 5000,
+        billingStatus: 'Paid'
+      } as any);
+
+      if (json.record) {
+        const nextHistory = [json.record, ...recentDispatches].slice(0, 12);
+        setRecentDispatches(nextHistory);
+        localStorage.setItem('tekilab_rapid_dispatches_v2', JSON.stringify(nextHistory));
       }
 
-      // Immediately trigger local branded TekiLab PDF download
-      await generateLabReportPDF(
-        {
-          accessionNumber,
-          patientName,
-          mrn: patientMrn,
-          patientPhone,
-          sampleType,
-          testName,
-          reportNumber: data.pdfReportNumber,
-          results: structuredResults,
-          likelyIssue: aiReport?.likelyDiagnosis || 'Verified Diagnostic Panel',
-          clinicalInterpretation:
-            aiReport?.clinicalSummary || 'Validated via TekiLab 5-Minute Rapid Result Console.',
-          validatedByName: currentUser?.name || 'TekiLab Lead Scientist'
-        },
-        matchedPatient,
-        companyLogo
-      );
-
-      toast.success(
-        `Report ${data.pdfReportNumber} validated & PDF generated in ${formatElapsedTime(elapsedSeconds)}. Ready for WhatsApp delivery.`
-      );
+      toast.success(`Report ${json.pdfReportNumber} dispatched!`, {
+        description: `Turnaround: ${formatElapsedTime(Math.max(elapsedSeconds, 45))} (${json.slaMet ? 'Within 5–10m SLA' : 'Completed'})`
+      });
     } catch (err: any) {
-      toast.error(err?.message || 'Failed to validate and dispatch result.');
+      toast.error(err?.message || 'Dispatch failed');
     } finally {
       setIsDispatching(false);
     }
   };
 
-  // Cross-Module Handoff: Send Validated Result + AI Suggested Drug to Pharmacy Queue
-  const handlePrescribeToPharmacy = async () => {
-    if (!aiReport) {
-      toast.error('Run AI Anomaly Check first to generate the clinical drug recommendation.');
+  // Download branded PDF
+  const handleDownloadPDF = () => {
+    const mappedResults: Record<string, { value: string; flag: string }> = {};
+    parameters.forEach((p) => {
+      mappedResults[p.name] = { value: `${p.value} ${p.unit || ''}`.trim(), flag: p.flag };
+    });
+
+    generateLabReportPDF(
+      {
+        id: sampleUid,
+        accessionNumber: sampleUid,
+        patientName: patientName || 'Walk-in Patient',
+        mrn: selectedPatientId || 'WALK-IN',
+        testName: selectedPanel.name,
+        category: selectedPanel.category,
+        sampleType,
+        orderStatus: 'RELEASED',
+        results: mappedResults,
+        likelyIssue: aiReport?.likelyDiagnosis || 'Normal Reference Values',
+        clinicalInterpretation: approvalNotes || aiReport?.clinicalSummary || '',
+        validatedByName: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verification' : approvedBy,
+        validatedAt: new Date().toISOString(),
+        createdAt: new Date().toISOString()
+      } as any,
+      {
+        name: config.facilityName || 'TekiLab Medical Laboratory',
+        logoUrl: companyLogo
+      }
+    );
+    toast.success('Official TekiLab PDF Report downloaded');
+  };
+
+  // Direct Diagnostic-to-Pharmacy Handoff (works even when Pharmacy UI is muted!)
+  const handlePharmacyHandoff = async () => {
+    if (!aiReport?.aiSuggestedDrug) {
+      toast.info('No medication suggestion attached to this normal result.');
       return;
     }
-
-    setIsHandingOff(true);
+    setIsHandingOffRx(true);
     try {
-      const summaryText = parameters
-        .map((p) => `${p.name}: ${p.value} ${p.unit} (${p.flag})`)
-        .join('; ');
-
       const result = await handoffLabResultToPharmacyQueue(
         {
           tenantId: config.tenantId,
-          patientId,
-          patientName,
-          patientMrn,
+          patientId: selectedPatientId || 'walk-in',
+          patientName: patientName || 'Walk-in Patient',
+          patientMrn: selectedPatientId || 'WALK-IN',
           patientPhone,
-          labResultId: dispatchRecord?.id || activeOrderId || `lab-${Date.now()}`,
-          accessionNumber,
-          testName,
-          testResultSummary: summaryText,
+          labResultId: sampleUid,
+          accessionNumber: sampleUid,
+          testName: selectedPanel.name,
+          testResultSummary: parameters.map((p) => `${p.name}: ${p.value} ${p.unit}`).join('; '),
           aiReport,
-          validatedBy: currentUser?.name || 'TekiLab Lead Scientist'
+          validatedBy: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verify' : approvedBy
         },
         config
       );
 
-      if (!result.ok) {
+      if (result.ok && result.payload) {
+        setRxHandoffResult({
+          handoffId: result.payload.handoffId,
+          deliveryMode: result.deliveryMode || (isPharmacyActive ? 'PHARMACY_POS_QUEUE' : 'BACKGROUND_E_PRESCRIPTION'),
+          message: result.message
+        });
+        toast.success(result.message);
+      } else {
         toast.error(result.message);
-        return;
       }
-
-      setHandoffId(result.payload?.handoffId || null);
-      toast.success(result.message);
     } finally {
-      setIsHandingOff(false);
+      setIsHandingOffRx(false);
     }
   };
 
-  const addParameterRow = () => {
-    setParameters((prev) => [
-      ...prev,
-      { name: '', value: '', unit: '', referenceRange: '', flag: 'Normal' }
-    ]);
+  // Start Next Rapid Sample
+  const handleResetWorkflow = () => {
+    setStep(1);
+    setSelectedPatientId('');
+    setPatientName('');
+    setPatientPhone('');
+    setPatientAllergies('');
+    setSampleUid(generateSampleUid());
+    setParameters(selectedPanel.parameters.map((p) => ({ ...p })));
+    setAiReport(null);
+    setIsApproved(false);
+    setApprovalMode(null);
+    setDispatchResult(null);
+    setRxHandoffResult(null);
+    setElapsedSeconds(0);
+    setTimerActive(true);
+    setCustodyVerified(false);
   };
 
-  const removeParameterRow = (index: number) => {
-    setParameters((prev) => prev.filter((_, idx) => idx !== index));
-  };
-
-  const updateParameter = (index: number, patch: Partial<RapidLabParameter>) => {
-    setParameters((prev) =>
-      prev.map((row, idx) => (idx === index ? { ...row, ...patch } : row))
-    );
-  };
-
-  const slaRatio = Math.min(100, (elapsedSeconds / slaTargetSeconds) * 100);
-  const slaState =
-    elapsedSeconds <= slaTargetSeconds
-      ? 'Within 5m Target'
-      : elapsedSeconds <= maxSlaSeconds
-        ? 'Within 10m SLA'
-        : 'SLA Exceeded';
-
-  const lifecycleSteps = [
-    { label: 'Sample Scan', done: Boolean(accessionNumber) },
-    { label: 'Data Capture', done: parameters.some((p) => String(p.value).trim().length > 0) },
-    { label: 'AI Anomaly Check', done: Boolean(aiReport) },
-    { label: 'WhatsApp PDF Dispatch', done: Boolean(dispatchRecord) }
-  ];
+  const isWithinSla = elapsedSeconds <= 600;
 
   return (
-    <div className="space-y-6 font-sans text-neutral-950">
-      {/* Top Rapid SLA Telemetry Header (Obsidian Black + TekiLab Green) */}
-      <div className="bg-neutral-950 text-white rounded-xl border border-neutral-800 p-5">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs text-neutral-400">
-              <span className="text-green-400 font-semibold">TekiLab Rapid LIMS</span>
-              <span aria-hidden="true">·</span>
-              <span>{config.facilityName}</span>
-              <span aria-hidden="true">·</span>
-              <span>Target SLA {config.slaConfig.rapidTurnaroundTargetMinutes} min</span>
-            </div>
-            <h1 className="text-2xl font-bold tracking-tight text-white">
-              Rapid Result Console
-            </h1>
-            <p className="text-xs text-neutral-400 max-w-2xl">
-              Scan specimen barcode or ingest diagnostic analyzer webhooks, run Gemini AI anomaly checks, and dispatch verified PDF reports via WhatsApp in under 5 minutes.
-            </p>
+    <div className="max-w-6xl mx-auto space-y-6 pb-10 font-sans text-neutral-950">
+      {/* Minimalist White / Blue / Black Header */}
+      <div className="bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5 shadow-xs">
+        <div className="space-y-1.5">
+          <div className="inline-flex items-center gap-2 text-xs font-semibold text-blue-600">
+            <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+            <span>TekiLab Rapid LIMS Engine</span>
+            <span className="text-neutral-300">/</span>
+            <span className="text-neutral-500 font-mono">{sampleUid}</span>
           </div>
-
-          {/* Live SLA Stopwatch & Quick Actions */}
-          <div className="flex flex-wrap items-center gap-3 shrink-0">
-            <div className="bg-neutral-900 border border-neutral-800 rounded-lg px-4 py-2.5 min-w-[190px]">
-              <div className="flex items-center justify-between text-[11px] text-neutral-400 mb-1">
-                <span>Turnaround Timer</span>
-                <span
-                  className={
-                    elapsedSeconds <= slaTargetSeconds
-                      ? 'text-green-400 font-medium'
-                      : elapsedSeconds <= maxSlaSeconds
-                        ? 'text-amber-400 font-medium'
-                        : 'text-red-400 font-medium'
-                  }
-                >
-                  {slaState}
-                </span>
-              </div>
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-2xl font-mono font-semibold tabular-nums text-white">
-                  {formatElapsedTime(elapsedSeconds)}
-                </span>
-                <span className="text-xs font-mono tabular-nums text-neutral-500">
-                  / {formatElapsedTime(slaTargetSeconds)}
-                </span>
-              </div>
-              <div className="mt-2 h-1 w-full bg-neutral-800 rounded-full overflow-hidden">
-                <div
-                  className={`h-full transition-all duration-300 ${
-                    elapsedSeconds <= slaTargetSeconds
-                      ? 'bg-green-500'
-                      : elapsedSeconds <= maxSlaSeconds
-                        ? 'bg-amber-500'
-                        : 'bg-red-500'
-                  }`}
-                  style={{ width: `${slaRatio}%` }}
-                />
-              </div>
-            </div>
-
-            <Button
-              type="button"
-              onClick={() => setIsScannerOpen(true)}
-              className="h-10 px-4 bg-green-600 hover:bg-green-500 text-white font-medium text-xs gap-2 whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <ScanLine className="w-4 h-4" />
-              Scan Barcode
-            </Button>
-
-            <Button
-              type="button"
-              variant="outline"
-              onClick={handleSimulateAnalyzerWebhook}
-              disabled={isSimulatingPush}
-              className="h-10 px-4 bg-neutral-900 hover:bg-neutral-800 text-white border-neutral-700 font-medium text-xs gap-2 whitespace-nowrap shrink-0 cursor-pointer"
-            >
-              <Cpu className="w-4 h-4 text-green-400" />
-              {isSimulatingPush ? 'Pushing Telemetry...' : 'Simulate Analyzer Push'}
-            </Button>
-          </div>
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-950">
+            5–10 Minute Rapid Diagnostic Workflow
+          </h1>
+          <p className="text-sm text-neutral-500">
+            Express registration, QR specimen custody, AI auto-verification, and instant patient &amp; pharmacy delivery.
+          </p>
         </div>
 
-        {/* 4-Step Workflow Progress Bar */}
-        <div className="mt-5 pt-4 border-t border-neutral-800 grid grid-cols-2 sm:grid-cols-4 gap-3">
-          {lifecycleSteps.map((step, idx) => (
-            <div key={step.label} className="flex items-center gap-2.5 text-xs">
-              <span
-                className={`w-5 h-5 rounded-md flex items-center justify-center font-mono text-[11px] font-semibold shrink-0 ${
-                  step.done
-                    ? 'bg-green-600 text-white'
-                    : 'bg-neutral-800 text-neutral-400 border border-neutral-700'
-                }`}
-              >
-                {step.done ? <Check className="w-3.5 h-3.5" /> : idx + 1}
-              </span>
-              <span className={step.done ? 'text-white font-medium' : 'text-neutral-400'}>
-                {step.label}
-              </span>
+        <div className="flex flex-wrap items-center gap-3 shrink-0">
+          {/* Live SLA Stopwatch */}
+          <div className="px-4 py-2.5 rounded-xl bg-neutral-950 text-white flex items-center gap-3">
+            <Clock className={`w-4 h-4 ${isWithinSla ? 'text-blue-400' : 'text-amber-400'}`} />
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-neutral-400">Turnaround SLA</div>
+              <div className="text-base font-mono font-bold tabular-nums leading-tight">
+                {formatElapsedTime(elapsedSeconds)}
+                <span className="text-[11px] font-normal text-neutral-400 ml-1.5">/ 10:00</span>
+              </div>
             </div>
-          ))}
+          </div>
+
+          <Button
+            variant="outline"
+            onClick={() => onNavigate?.('module_config')}
+            className="h-12 px-4 rounded-xl border-neutral-200 text-neutral-700 hover:text-neutral-950 hover:bg-neutral-50"
+          >
+            <Sliders className="w-4 h-4 mr-2 text-blue-600" />
+            Modules
+          </Button>
         </div>
       </div>
 
-      {/* Main Asymmetric Split Console */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
-        {/* LEFT COLUMN: Sample Lookup, Queue, Instrument Hub & Predictive Maintenance */}
-        <div className="xl:col-span-4 space-y-4">
-          {/* Quick Barcode / Accession Search Box */}
-          <div className="bg-white border border-neutral-200 rounded-xl p-4 space-y-3">
-            <label className="text-xs font-semibold text-neutral-900 block">
-              Barcode / Accession Rapid Intake
-            </label>
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                handleBarcodeLookup(scanInput);
-              }}
-              className="flex gap-2"
-            >
-              <Input
-                value={scanInput}
-                onChange={(e) => setScanInput(e.target.value)}
-                placeholder="Scan or type ACC-2026-9041..."
-                className="h-9 text-xs font-mono bg-neutral-50 border-neutral-200"
-              />
-              <Button
-                type="submit"
-                className="h-9 px-3.5 bg-neutral-950 hover:bg-neutral-800 text-white text-xs whitespace-nowrap shrink-0 cursor-pointer"
+      {/* Clean 5-Step Progress Stepper */}
+      <div className="bg-white border border-neutral-200 rounded-2xl p-4 shadow-xs">
+        <div className="grid grid-cols-5 gap-2">
+          {STEPS.map((s) => {
+            const isActive = step === s.num;
+            const isCompleted = step > s.num;
+            return (
+              <button
+                key={s.num}
+                type="button"
+                onClick={() => {
+                  if (s.num <= step || (s.num === 2 && patientName.trim()) || (s.num === 3 && patientName.trim())) {
+                    setStep(s.num);
+                  }
+                }}
+                className={`flex items-center gap-3 p-3 rounded-xl text-left transition-all border cursor-pointer ${
+                  isActive
+                    ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                    : isCompleted
+                      ? 'bg-blue-50/70 text-neutral-950 border-blue-200 hover:bg-blue-50'
+                      : 'bg-white text-neutral-400 border-neutral-100 hover:border-neutral-200'
+                }`}
               >
-                Load
-              </Button>
-            </form>
+                <div
+                  className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${
+                    isActive
+                      ? 'bg-white text-blue-600'
+                      : isCompleted
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-neutral-100 text-neutral-500'
+                  }`}
+                >
+                  {isCompleted ? <Check className="w-4 h-4" /> : s.num}
+                </div>
+                <div className="min-w-0 hidden sm:block">
+                  <div className="text-xs font-bold truncate">{s.label}</div>
+                  <div className={`text-[11px] truncate ${isActive ? 'text-blue-100' : 'text-neutral-400'}`}>
+                    {s.sub}
+                  </div>
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
-            {/* Segmented Mode Filter */}
-            <div className="grid grid-cols-3 gap-1 p-1 bg-neutral-100 rounded-lg">
-              <button
-                type="button"
-                onClick={() => setLeftTab('queue')}
-                className={`py-1.5 px-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  leftTab === 'queue'
-                    ? 'bg-white text-neutral-950 shadow-2xs'
-                    : 'text-neutral-600 hover:text-neutral-950'
-                }`}
-              >
-                Worklist ({labOrders.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setLeftTab('instruments')}
-                className={`py-1.5 px-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  leftTab === 'instruments'
-                    ? 'bg-white text-neutral-950 shadow-2xs'
-                    : 'text-neutral-600 hover:text-neutral-950'
-                }`}
-              >
-                Analyzers ({instrumentPackets.length})
-              </button>
-              <button
-                type="button"
-                onClick={() => setLeftTab('maintenance')}
-                className={`py-1.5 px-2 text-xs font-medium rounded-md transition-colors whitespace-nowrap cursor-pointer ${
-                  leftTab === 'maintenance'
-                    ? 'bg-white text-neutral-950 shadow-2xs'
-                    : 'text-neutral-600 hover:text-neutral-950'
-                }`}
-              >
-                Equipment
-              </button>
+      {/* ===================================================================== */}
+      {/* STEP 1: EXPRESS REGISTRATION                                          */}
+      {/* ===================================================================== */}
+      {step === 1 && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Patient Intake Card */}
+          <div className="lg:col-span-5 bg-white border border-neutral-200 rounded-2xl p-6 space-y-5 shadow-xs">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <UserPlus className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-base font-bold text-neutral-950">1. Express Patient Intake</h2>
+                  <p className="text-xs text-neutral-500">Lookup existing patient or register in seconds</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Lookup */}
+            <div className="relative">
+              <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <Input
+                value={patientSearch}
+                onChange={(e) => setPatientSearch(e.target.value)}
+                placeholder="Search by Name, Phone, or MRN..."
+                className="pl-10 h-10 bg-neutral-50 border-neutral-200 rounded-xl text-sm"
+              />
+            </div>
+
+            {filteredPatients.length > 0 && (
+              <div className="flex flex-wrap gap-1.5">
+                {filteredPatients.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handleSelectExistingPatient(p)}
+                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
+                      selectedPatientId === p.id
+                        ? 'bg-neutral-950 text-white border-neutral-950'
+                        : 'bg-white text-neutral-700 border-neutral-200 hover:border-blue-400 hover:text-blue-700'
+                    }`}
+                  >
+                    {p.fullName}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="border-t border-neutral-100 pt-4 space-y-3.5">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Patient Full Name *</label>
+                <Input
+                  value={patientName}
+                  onChange={(e) => {
+                    setPatientName(e.target.value);
+                    setSelectedPatientId('');
+                  }}
+                  placeholder="e.g. Chinedu Okafor"
+                  className="h-10 rounded-xl border-neutral-200"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Age (Years)</label>
+                  <Input
+                    type="number"
+                    value={patientAge}
+                    onChange={(e) => setPatientAge(e.target.value)}
+                    className="h-10 rounded-xl border-neutral-200"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Gender</label>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {(['Male', 'Female'] as const).map((g) => (
+                      <button
+                        key={g}
+                        type="button"
+                        onClick={() => setPatientGender(g)}
+                        className={`h-10 rounded-xl text-xs font-semibold border cursor-pointer transition-colors ${
+                          patientGender === g
+                            ? 'bg-neutral-950 text-white border-neutral-950'
+                            : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-50'
+                        }`}
+                      >
+                        {g}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">WhatsApp / Phone Number</label>
+                <Input
+                  value={patientPhone}
+                  onChange={(e) => setPatientPhone(e.target.value)}
+                  placeholder="0803 123 4567"
+                  className="h-10 rounded-xl border-neutral-200"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Known Drug Allergies (Optional)</label>
+                <Input
+                  value={patientAllergies}
+                  onChange={(e) => setPatientAllergies(e.target.value)}
+                  placeholder="e.g. Penicillin, Sulfa (used for AI Contraindication Guard)"
+                  className="h-10 rounded-xl border-neutral-200"
+                />
+              </div>
             </div>
           </div>
 
-          {/* Left Tab Content */}
-          {leftTab === 'queue' && (
-            <div className="bg-white border border-neutral-200 rounded-xl divide-y divide-neutral-100 max-h-[540px] overflow-y-auto">
-              {labOrders.length === 0 ? (
-                <div className="p-8 text-center text-xs text-neutral-500">
-                  No pending specimens in queue. Scan a barcode or push from an analyzer.
+          {/* Rapid Panel Picker Card */}
+          <div className="lg:col-span-7 bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xs">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-neutral-950">Select Pre-Configured Rapid Test Panel</h2>
+                  <p className="text-xs text-neutral-500">10 ISO-ready rapid diagnostic panels with built-in reference ranges</p>
                 </div>
-              ) : (
-                labOrders.map((order) => {
-                  const selected = order.accessionNumber === accessionNumber;
+                <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold">
+                  {selectedPanel.targetTatMinutes}m target
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                {RAPID_TEST_PANELS.map((panel) => {
+                  const active = panel.id === selectedPanelId;
                   return (
                     <button
+                      key={panel.id}
                       type="button"
-                      key={order.id}
-                      onClick={() => loadOrderIntoConsole(order, 'manual_entry')}
-                      className={`w-full text-left p-4 transition-colors cursor-pointer ${
-                        selected ? 'bg-green-50/70' : 'hover:bg-neutral-50'
+                      onClick={() => handleSelectPanel(panel)}
+                      className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
+                        active
+                          ? 'bg-blue-50/70 border-blue-600 ring-1 ring-blue-600'
+                          : 'bg-white border-neutral-200 hover:border-neutral-400'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-neutral-950 truncate">
-                          {order.testName}
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <span className={`text-[11px] font-mono font-bold ${active ? 'text-blue-700' : 'text-neutral-500'}`}>
+                          {panel.code}
                         </span>
-                        <span
-                          className={`text-[11px] font-mono shrink-0 ${
-                            order.orderStatus === 'RELEASED'
-                              ? 'text-green-700 font-semibold'
-                              : 'text-neutral-500'
-                          }`}
-                        >
-                          {order.orderStatus}
-                        </span>
+                        <span className="text-[10px] font-medium text-neutral-500">{panel.category}</span>
                       </div>
-                      <div className="mt-1 flex items-center justify-between text-xs text-neutral-600">
-                        <span className="truncate">{order.patientName}</span>
-                        <span className="font-mono tabular-nums text-neutral-900 font-medium">
-                          {order.accessionNumber}
-                        </span>
-                      </div>
-                      <div className="mt-1 text-[11px] text-neutral-400 flex items-center gap-1.5">
-                        <span>{order.sampleType}</span>
-                        <span aria-hidden="true">·</span>
-                        <span className="font-mono">{order.mrn}</span>
+                      <div className="text-sm font-semibold text-neutral-950 leading-snug">{panel.name}</div>
+                      <div className="text-[11px] text-neutral-500 mt-1">
+                        {panel.sampleType} · {panel.tubeColor}
                       </div>
                     </button>
-                  );
-                })
-              )}
-            </div>
-          )}
-
-          {leftTab === 'instruments' && (
-            <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden">
-              <div className="px-4 py-3 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
-                <div>
-                  <h3 className="text-xs font-semibold text-neutral-950">Instrument API Hub</h3>
-                  <p className="text-[11px] font-mono text-neutral-500">
-                    POST /api/lims/instruments/webhook
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={fetchInstrumentInbox}
-                  className="p-1.5 rounded-md hover:bg-neutral-200 text-neutral-600 cursor-pointer"
-                  title="Refresh instrument packets"
-                >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isLoadingInstruments ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-              <div className="divide-y divide-neutral-100 max-h-[480px] overflow-y-auto">
-                {instrumentPackets.map((pkt) => (
-                  <div key={pkt.packetId} className="p-4 space-y-2 hover:bg-neutral-50">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xs font-semibold text-neutral-950 truncate">
-                        {pkt.testName}
-                      </span>
-                      <span className="text-[11px] font-mono text-green-700 font-medium shrink-0">
-                        {pkt.instrumentId}
-                      </span>
-                    </div>
-                    <div className="text-xs text-neutral-600 flex items-center justify-between">
-                      <span>{pkt.patientName || 'Unassigned'}</span>
-                      <span className="font-mono tabular-nums">{pkt.accessionNumber}</span>
-                    </div>
-                    <div className="flex items-center justify-between pt-1">
-                      <span className="text-[11px] text-neutral-400 font-mono">
-                        {pkt.parameters.length} analytes · {pkt.sampleBarcode}
-                      </span>
-                      <Button
-                        type="button"
-                        size="sm"
-                        onClick={() => loadInstrumentPacket(pkt)}
-                        className="h-7 px-3 bg-green-600 hover:bg-green-700 text-white text-[11px] cursor-pointer"
-                      >
-                        Pull to Console
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {leftTab === 'maintenance' && (
-            <div className="bg-white border border-neutral-200 rounded-xl overflow-hidden">
-              <div className="px-4 py-3 bg-neutral-50 border-b border-neutral-200 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Wrench className="w-4 h-4 text-green-600" />
-                  <h3 className="text-xs font-semibold text-neutral-950">
-                    Predictive Equipment Maintenance
-                  </h3>
-                </div>
-                <span className="text-[11px] font-mono text-neutral-500">4 Analyzers</span>
-              </div>
-              <div className="divide-y divide-neutral-100">
-                {DEFAULT_LAB_EQUIPMENT.map((eq) => {
-                  const pct = Math.min(
-                    100,
-                    Math.round((eq.cyclesCompleted / eq.cycleMaintenanceThreshold) * 100)
-                  );
-                  return (
-                    <div key={eq.id} className="p-4 space-y-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-neutral-950">{eq.name}</span>
-                        <span
-                          className={`text-[11px] font-medium ${
-                            eq.status === 'Operational'
-                              ? 'text-green-700'
-                              : eq.status === 'Calibration Due'
-                                ? 'text-amber-700'
-                                : 'text-red-700'
-                          }`}
-                        >
-                          {eq.status}
-                        </span>
-                      </div>
-                      <div className="text-[11px] text-neutral-500 flex items-center justify-between font-mono tabular-nums">
-                        <span>{eq.serialNumber}</span>
-                        <span>
-                          {eq.cyclesCompleted} / {eq.cycleMaintenanceThreshold} cycles ({pct}%)
-                        </span>
-                      </div>
-                      <div className="h-1.5 w-full bg-neutral-100 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full ${
-                            pct >= 90
-                              ? 'bg-red-600'
-                              : pct >= 80
-                                ? 'bg-amber-500'
-                                : 'bg-green-600'
-                          }`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
-                      <div className="text-[11px] text-neutral-500 flex items-center justify-between">
-                        <span>Next forecast: {eq.predictedMaintenanceDate}</span>
-                        <span className="font-mono tabular-nums">Uptime {eq.uptimePercent}%</span>
-                      </div>
-                    </div>
                   );
                 })}
               </div>
             </div>
-          )}
 
-          {/* Sample Barcode & QR Tracking Card */}
-          <div className="bg-white border border-neutral-200 rounded-xl p-4 flex items-center justify-between gap-4">
-            <div className="space-y-1 min-w-0">
-              <p className="text-[11px] font-medium text-neutral-500">Active Specimen Tracking</p>
-              <p className="text-sm font-mono font-semibold text-neutral-950 truncate">
-                {accessionNumber}
-              </p>
-              <p className="text-[11px] font-mono text-neutral-500 truncate">
-                Barcode: {sampleBarcode}
-              </p>
-              <p className="text-[11px] text-green-700 font-medium">
-                Source: {intakeSource.replace('_', ' ')}
-              </p>
-            </div>
-            <div className="p-2.5 bg-neutral-950 text-white rounded-lg shrink-0 flex flex-col items-center">
-              <QrCode className="w-10 h-10 text-green-400" />
-              <span className="text-[9px] font-mono mt-1 text-neutral-300">ISO-15189</span>
+            <div className="pt-4 border-t border-neutral-100 flex items-center justify-between gap-4">
+              <div className="text-xs text-neutral-500">
+                Selected: <span className="font-semibold text-neutral-950">{selectedPanel.name}</span>
+              </div>
+              <Button
+                onClick={handleCompleteRegistration}
+                className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+              >
+                Register &amp; Generate Sample UID
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
             </div>
           </div>
         </div>
+      )}
 
-        {/* RIGHT STAGE: Structured Parameters, Gemini AI Anomaly Check & Dispatch / Pharmacy Handoff */}
-        <div className="xl:col-span-8 space-y-5">
-          {/* Specimen & Patient Header Card */}
-          <div className="bg-white border border-neutral-200 rounded-xl p-5 space-y-5">
-            <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 pb-4 border-b border-neutral-100">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs text-neutral-500 flex-wrap">
-                  <span className="font-mono font-semibold text-neutral-950">{accessionNumber}</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{sampleType}</span>
-                  {activeInstrumentId && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="text-green-700 font-medium">{activeInstrumentId}</span>
-                    </>
-                  )}
-                </div>
-                <h2 className="text-lg font-bold text-neutral-950">{testName}</h2>
-                <div className="flex items-center gap-2 text-xs text-neutral-600 flex-wrap">
-                  <span className="font-medium text-neutral-900">{patientName}</span>
-                  <span aria-hidden="true">·</span>
-                  <span className="font-mono">{patientMrn}</span>
-                  <span aria-hidden="true">·</span>
-                  <span className="font-mono tabular-nums">{patientPhone}</span>
-                  {matchedPatient?.allergies && matchedPatient.allergies.length > 0 && (
-                    <>
-                      <span aria-hidden="true">·</span>
-                      <span className="text-red-700 font-medium">
-                        Allergies: {matchedPatient.allergies.join(', ')}
-                      </span>
-                    </>
-                  )}
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full md:w-auto">
-                <Input
-                  value={patientPhone}
-                  onChange={(e) => setPatientPhone(e.target.value)}
-                  placeholder="WhatsApp Phone (+234...)"
-                  className="h-9 text-xs font-mono bg-neutral-50 border-neutral-200 md:w-44"
-                  aria-label="Patient WhatsApp Number"
-                />
-                <Button
-                  type="button"
-                  onClick={handleRunAIAnomalyCheck}
-                  disabled={isAnalyzingAI}
-                  className="h-9 px-4 bg-neutral-950 hover:bg-neutral-800 text-white text-xs font-medium gap-2 whitespace-nowrap cursor-pointer"
-                >
-                  <Activity className={`w-3.5 h-3.5 text-green-400 ${isAnalyzingAI ? 'animate-spin' : ''}`} />
-                  {isAnalyzingAI ? 'Analyzing with Gemini...' : 'Run AI Anomaly Check'}
-                </Button>
-              </div>
+      {/* ===================================================================== */}
+      {/* STEP 2: QR SPECIMEN TAGGING & CHAIN OF CUSTODY                        */}
+      {/* ===================================================================== */}
+      {step === 2 && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Printable QR Label Preview */}
+          <div className="lg:col-span-5 bg-white border border-neutral-200 rounded-2xl p-6 space-y-5 shadow-xs">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-bold text-neutral-950">2. Specimen QR Label</h2>
+              <span className="px-2.5 py-1 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700">
+                {custodyVerified ? 'Collected & Verified' : 'Registered'}
+              </span>
             </div>
 
-            {/* Structured Parameters Data Grid */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-semibold text-neutral-900">
-                  Measured Diagnostic Parameters
-                </h3>
-                <button
-                  type="button"
-                  onClick={addParameterRow}
-                  className="text-xs font-medium text-green-700 hover:text-green-800 flex items-center gap-1 cursor-pointer"
-                >
-                  <Plus className="w-3.5 h-3.5" /> Add Parameter
-                </button>
-              </div>
-
-              <div className="border border-neutral-200 rounded-lg overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-neutral-50 border-b border-neutral-200 text-neutral-600">
-                    <tr>
-                      <th className="py-2.5 px-3">Analyte Parameter</th>
-                      <th className="py-2.5 px-3">Measured Value</th>
-                      <th className="py-2.5 px-3">Unit</th>
-                      <th className="py-2.5 px-3">Reference Interval</th>
-                      <th className="py-2.5 px-3">Flag</th>
-                      <th className="py-2.5 px-2 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-neutral-100">
-                    {parameters.map((param, idx) => (
-                      <tr key={idx} className="hover:bg-neutral-50/70">
-                        <td className="py-2 px-3">
-                          <Input
-                            value={param.name}
-                            onChange={(e) => updateParameter(idx, { name: e.target.value })}
-                            placeholder="Parameter name"
-                            className="h-8 text-xs border-neutral-200"
-                          />
-                        </td>
-                        <td className="py-2 px-3">
-                          <Input
-                            value={param.value}
-                            onChange={(e) => updateParameter(idx, { value: e.target.value })}
-                            placeholder="Value"
-                            className="h-8 text-xs font-mono tabular-nums font-semibold border-neutral-200"
-                          />
-                        </td>
-                        <td className="py-2 px-3">
-                          <Input
-                            value={param.unit}
-                            onChange={(e) => updateParameter(idx, { unit: e.target.value })}
-                            placeholder="g/dL"
-                            className="h-8 text-xs font-mono text-neutral-600 border-neutral-200 w-24"
-                          />
-                        </td>
-                        <td className="py-2 px-3">
-                          <Input
-                            value={param.referenceRange}
-                            onChange={(e) => updateParameter(idx, { referenceRange: e.target.value })}
-                            placeholder="12.0 - 16.0"
-                            className="h-8 text-xs font-mono tabular-nums text-neutral-600 border-neutral-200 w-32"
-                          />
-                        </td>
-                        <td className="py-2 px-3">
-                          <select
-                            value={param.flag}
-                            onChange={(e) =>
-                              updateParameter(idx, {
-                                flag: e.target.value as RapidLabParameter['flag']
-                              })
-                            }
-                            className={`h-8 rounded-md border px-2 text-xs font-medium bg-white ${
-                              param.flag === 'Critical' || param.flag === 'High' || param.flag === 'Positive'
-                                ? 'border-red-300 text-red-700'
-                                : param.flag === 'Low'
-                                  ? 'border-amber-300 text-amber-700'
-                                  : 'border-neutral-200 text-green-700'
-                            }`}
-                          >
-                            <option value="Normal">Normal</option>
-                            <option value="High">High</option>
-                            <option value="Low">Low</option>
-                            <option value="Critical">Critical</option>
-                            <option value="Positive">Positive</option>
-                            <option value="Negative">Negative</option>
-                          </select>
-                        </td>
-                        <td className="py-2 px-2 text-right">
-                          <button
-                            type="button"
-                            onClick={() => removeParameterRow(idx)}
-                            className="p-1 text-neutral-400 hover:text-red-600 cursor-pointer"
-                            aria-label="Remove parameter row"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* AI Anomaly Check Error Notice */}
-            {aiError && (
-              <div className="p-4 rounded-lg border border-red-200 bg-red-50 text-red-900 text-xs flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-semibold">AI Anomaly Check Unavailable</p>
-                  <p className="mt-0.5 text-red-800">{aiError}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Gemini AI Anomaly Check Structured Output */}
-            {aiReport && (
-              <div className="border border-neutral-200 rounded-xl overflow-hidden">
-                <div
-                  className={`px-4 py-3 flex flex-wrap items-center justify-between gap-2 border-b ${
-                    aiReport.severity === 'critical'
-                      ? 'bg-red-50 border-red-200 text-red-950'
-                      : aiReport.severity === 'attention'
-                        ? 'bg-amber-50 border-amber-200 text-amber-950'
-                        : 'bg-green-50 border-green-200 text-green-950'
-                  }`}
-                >
-                  <div className="flex items-center gap-2 text-xs font-semibold">
-                    {aiReport.severity === 'critical' ? (
-                      <ShieldAlert className="w-4 h-4 text-red-600" />
-                    ) : aiReport.severity === 'attention' ? (
-                      <AlertTriangle className="w-4 h-4 text-amber-600" />
-                    ) : (
-                      <CheckCircle2 className="w-4 h-4 text-green-600" />
-                    )}
-                    <span>
-                      AI Validation Verdict: {aiReport.severity.toUpperCase()} — {aiReport.likelyDiagnosis}
-                    </span>
+            <div className="border-2 border-dashed border-neutral-300 rounded-2xl p-5 bg-neutral-50/70 space-y-4">
+              <div className="flex items-start justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
+                    TekiLab ISO Specimen UID
                   </div>
-                  <span className="text-[11px] font-mono text-neutral-600">
-                    Model: {aiReport.model}
-                  </span>
+                  <div className="text-xl font-mono font-extrabold text-neutral-950 tracking-tight">
+                    {sampleUid}
+                  </div>
+                  <div className="text-sm font-semibold text-neutral-900">{patientName || 'Walk-in Patient'}</div>
+                  <div className="text-xs text-neutral-600">{selectedPanel.name}</div>
                 </div>
-
-                <div className="p-4 space-y-4 bg-white">
-                  <p className="text-xs text-neutral-700 leading-relaxed">
-                    {aiReport.clinicalSummary}
-                  </p>
-
-                  {aiReport.flaggedParameters.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-semibold text-neutral-900">
-                        Flagged Deviations ({aiReport.flaggedParameters.length})
-                      </p>
-                      <div className="divide-y divide-neutral-100 border border-neutral-200 rounded-lg">
-                        {aiReport.flaggedParameters.map((fp, i) => (
-                          <div key={i} className="p-2.5 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                            <div>
-                              <span className="font-semibold text-neutral-950">{fp.parameter}</span>
-                              <span className="text-neutral-500"> · {fp.clinicalNote}</span>
-                            </div>
-                            <div className="font-mono tabular-nums text-[11px] shrink-0">
-                              <span className="font-semibold text-red-700">{fp.value}</span>
-                              <span className="text-neutral-400"> (Ref: {fp.referenceRange})</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* AI Suggested Drug + Cross-Module Pharmacy Handoff Block */}
-                  {aiReport.aiSuggestedDrug && (
-                    <div className="p-4 rounded-lg bg-neutral-50 border border-neutral-200 space-y-3">
-                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                        <div className="flex items-center gap-2">
-                          <Pill className="w-4 h-4 text-green-600" />
-                          <span className="text-xs font-semibold text-neutral-950">
-                            AI Suggested Therapeutic Intervention
-                          </span>
-                        </div>
-                        <span className="text-[11px] font-mono text-neutral-500">
-                          {aiReport.aiSuggestedDrug.dosage} · {aiReport.aiSuggestedDrug.frequency} ·{' '}
-                          {aiReport.aiSuggestedDrug.durationDays} days
-                        </span>
-                      </div>
-
-                      <div className="text-xs space-y-1">
-                        <p className="font-semibold text-neutral-950">
-                          {aiReport.aiSuggestedDrug.drugName}{' '}
-                          <span className="font-normal text-neutral-500">
-                            ({aiReport.aiSuggestedDrug.genericName})
-                          </span>
-                        </p>
-                        <p className="text-neutral-600">{aiReport.aiSuggestedDrug.rationale}</p>
-                        <p className="text-[11px] text-green-800 font-medium">
-                          Safety Check: {aiReport.aiSuggestedDrug.contraindicationCheck}
-                        </p>
-                      </div>
-
-                      {/* Contextual Cross-Module Handoff Button (Muted when Pharmacy is OFF) */}
-                      <div className="pt-2 border-t border-neutral-200 flex flex-wrap items-center justify-between gap-3">
-                        <ModuleGuard
-                          module="pharmacy"
-                          fallback={
-                            <div className="flex items-center justify-between w-full gap-2 text-xs text-neutral-500">
-                              <span className="flex items-center gap-1.5">
-                                <Lock className="w-3.5 h-3.5 text-neutral-400" />
-                                Pharmacy Module is muted for this facility. Enable it to hand off prescriptions.
-                              </span>
-                              {onNavigate && (
-                                <button
-                                  type="button"
-                                  onClick={() => onNavigate('module_config')}
-                                  className="text-green-700 font-semibold hover:underline whitespace-nowrap cursor-pointer"
-                                >
-                                  Configure Modules
-                                </button>
-                              )}
-                            </div>
-                          }
-                        >
-                          <div className="flex flex-wrap items-center justify-between w-full gap-3">
-                            <span className="text-xs text-neutral-600">
-                              Pharmacy Module Active — Ready to draft medication order.
-                            </span>
-                            <div className="flex items-center gap-2">
-                              {handoffId ? (
-                                <>
-                                  <span className="text-xs font-mono font-semibold text-green-700">
-                                    Queued: {handoffId}
-                                  </span>
-                                  {onNavigate && (
-                                    <Button
-                                      type="button"
-                                      size="sm"
-                                      onClick={() => onNavigate('pos')}
-                                      className="h-8 px-3 bg-neutral-950 hover:bg-neutral-800 text-white text-xs gap-1.5 cursor-pointer"
-                                    >
-                                      Open Pharmacy Queue <ArrowRight className="w-3.5 h-3.5" />
-                                    </Button>
-                                  )}
-                                </>
-                              ) : (
-                                <Button
-                                  type="button"
-                                  size="sm"
-                                  onClick={handlePrescribeToPharmacy}
-                                  disabled={isHandingOff}
-                                  className="h-8 px-3.5 bg-green-600 hover:bg-green-700 text-white text-xs font-medium gap-1.5 whitespace-nowrap cursor-pointer"
-                                >
-                                  <Pill className="w-3.5 h-3.5" />
-                                  {isHandingOff ? 'Sending to Pharmacy...' : 'Prescribe Action -> Pharmacy Queue'}
-                                </Button>
-                              )}
-                            </div>
-                          </div>
-                        </ModuleGuard>
-                      </div>
-                    </div>
-                  )}
+                <div className="w-16 h-16 rounded-xl bg-white border border-neutral-200 flex items-center justify-center shrink-0">
+                  <QrCode className="w-11 h-11 text-neutral-950" />
                 </div>
               </div>
-            )}
 
-            {/* Primary Action Bar: Validate & Trigger WhatsApp PDF Dispatch */}
-            <div className="pt-4 border-t border-neutral-200 flex flex-wrap items-center justify-between gap-3">
-              <div className="text-xs text-neutral-500">
-                Validated By:{' '}
-                <span className="font-medium text-neutral-900">
-                  {currentUser?.name || currentUser?.displayName || 'TekiLab Lead Scientist'}
-                </span>
+              <div className="grid grid-cols-2 gap-2 pt-3 border-t border-neutral-200 text-[11px] text-neutral-600">
+                <div><span className="font-semibold text-neutral-900">Tube:</span> {tubeColor}</div>
+                <div><span className="font-semibold text-neutral-900">Type:</span> {sampleType}</div>
+                <div><span className="font-semibold text-neutral-900">Bay:</span> {collectionSite}</div>
+                <div><span className="font-semibold text-neutral-900">Time:</span> {new Date().toLocaleTimeString()}</div>
               </div>
+            </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={async () => {
-                    const map: any = {};
-                    parameters.forEach((p) => {
-                      if (p.name.trim()) map[p.name] = p;
-                    });
-                    await generateLabReportPDF(
-                      {
-                        accessionNumber,
-                        patientName,
-                        mrn: patientMrn,
-                        patientPhone,
-                        sampleType,
-                        testName,
-                        reportNumber: dispatchRecord?.whatsappDispatch?.pdfReportNumber || `TLAB-DRAFT`,
-                        results: map,
-                        likelyIssue: aiReport?.likelyDiagnosis || 'Pending AI Validation',
-                        clinicalInterpretation: aiReport?.clinicalSummary || 'Draft report preview.',
-                        validatedByName: currentUser?.name || 'TekiLab Scientist'
-                      },
-                      matchedPatient,
-                      companyLogo
-                    );
-                    toast.success('Downloaded TekiLab PDF report.');
-                  }}
-                  className="h-10 px-4 border-neutral-300 text-neutral-900 hover:bg-neutral-50 text-xs font-medium gap-2 cursor-pointer"
-                >
-                  <FileDown className="w-4 h-4" />
-                  Download PDF
-                </Button>
-
-                <Button
-                  type="button"
-                  onClick={handleValidateAndDispatchWhatsApp}
-                  disabled={isDispatching}
-                  className="h-10 px-5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold gap-2 whitespace-nowrap cursor-pointer"
-                >
-                  <Send className="w-4 h-4" />
-                  {isDispatching ? 'Validating & Generating PDF...' : 'Validate & Dispatch WhatsApp PDF'}
-                </Button>
-              </div>
+            <div className="grid grid-cols-2 gap-2.5">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  navigator.clipboard?.writeText(sampleUid);
+                  setCopiedUid(true);
+                  setTimeout(() => setCopiedUid(false), 1800);
+                  toast.success(`Copied ${sampleUid}`);
+                }}
+                className="h-10 rounded-xl border-neutral-200"
+              >
+                {copiedUid ? <Check className="w-4 h-4 mr-1.5 text-blue-600" /> : <Copy className="w-4 h-4 mr-1.5" />}
+                Copy UID
+              </Button>
+              <Button
+                variant="outline"
+                onClick={() => {
+                  window.print();
+                  toast.success('Sent specimen label to thermal printer');
+                }}
+                className="h-10 rounded-xl border-neutral-200"
+              >
+                <Printer className="w-4 h-4 mr-1.5" />
+                Print Label
+              </Button>
             </div>
           </div>
 
-          {/* Verified WhatsApp Dispatch Confirmation Card */}
-          {dispatchRecord?.whatsappDispatch && (
-            <div className="bg-neutral-950 text-white rounded-xl border border-neutral-800 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <div className="flex items-center gap-2 text-xs text-green-400 font-semibold">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>
-                    Validated & Persisted — {dispatchRecord.whatsappDispatch.pdfReportNumber}
-                  </span>
+          {/* Chain of Custody Form */}
+          <div className="lg:col-span-7 bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xs">
+            <div className="space-y-4">
+              <div>
+                <h2 className="text-base font-bold text-neutral-950">Chain of Custody &amp; Collection Verification</h2>
+                <p className="text-xs text-neutral-500">Timestamped audit trail from specimen collection to rapid analyzer bench</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Specimen Type</label>
+                  <Input value={sampleType} onChange={(e) => setSampleType(e.target.value)} className="h-10 rounded-xl border-neutral-200" />
                 </div>
-                <p className="text-xs text-neutral-300">
-                  Turnaround:{' '}
-                  <span className="font-mono tabular-nums text-white font-semibold">
-                    {formatElapsedTime(dispatchRecord.whatsappDispatch.turnaroundSeconds)}
-                  </span>{' '}
-                  · Recipient:{' '}
-                  <span className="font-mono">{dispatchRecord.whatsappDispatch.recipientPhone}</span>{' '}
-                  · {dispatchRecord.whatsappDispatch.slaMet ? 'Sub-10m SLA Met' : 'SLA Logged'}
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Tube / Container Color</label>
+                  <Input value={tubeColor} onChange={(e) => setTubeColor(e.target.value)} className="h-10 rounded-xl border-neutral-200" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Collection Site</label>
+                  <Input value={collectionSite} onChange={(e) => setCollectionSite(e.target.value)} className="h-10 rounded-xl border-neutral-200" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Analyzer / Storage Rack</label>
+                  <Input value={storageLocation} onChange={(e) => setStorageLocation(e.target.value)} className="h-10 rounded-xl border-neutral-200" />
+                </div>
+              </div>
+
+              <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${custodyVerified ? 'bg-blue-600 text-white' : 'bg-white border border-neutral-200 text-neutral-700'}`}>
+                    <ScanLine className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-neutral-950">
+                      {custodyVerified ? 'Specimen Barcode Verified' : 'Scan or Confirm Physical Tube'}
+                    </div>
+                    <div className="text-xs text-neutral-500">
+                      Transitions sample status: Registered → Collected → In Analyzer
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button variant="outline" size="sm" onClick={() => setIsScannerOpen(true)} className="rounded-xl border-neutral-200">
+                    Camera Scan
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      setCustodyVerified(true);
+                      toast.success(`Specimen ${sampleUid} marked Collected`);
+                    }}
+                    className="rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white"
+                  >
+                    Confirm Collected
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t border-neutral-100 flex items-center justify-between">
+              <Button variant="ghost" onClick={() => setStep(1)} className="rounded-xl text-neutral-600">
+                <ArrowLeft className="w-4 h-4 mr-1.5" />
+                Back
+              </Button>
+              <Button
+                onClick={() => {
+                  setCustodyVerified(true);
+                  setStep(3);
+                }}
+                className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+              >
+                Proceed to Analyzer Workstation
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* STEP 3: RAPID ANALYZER WORKSTATION & AI ANALYSIS                      */}
+      {/* ===================================================================== */}
+      {step === 3 && (
+        <div className="space-y-6">
+          {/* Diagnostic Instrument Webhook Bridge */}
+          {instrumentInbox.length > 0 && (
+            <div className="bg-white border border-neutral-200 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+                  <Cpu className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="text-xs font-bold text-neutral-950">Analyzer Bridge Live Feed</div>
+                  <div className="text-[11px] text-neutral-500">Pull automated HL7 / JSON readings directly from connected analyzers</div>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                {instrumentInbox.slice(0, 2).map((pkt) => (
+                  <button
+                    key={pkt.packetId}
+                    type="button"
+                    onClick={() => handleLoadInstrumentPacket(pkt)}
+                    className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-neutral-950 text-white hover:bg-blue-600 transition-colors cursor-pointer"
+                  >
+                    Pull {pkt.instrumentId} ({pkt.patientName || pkt.accessionNumber})
+                  </button>
+                ))}
+                <Button variant="ghost" size="sm" onClick={refreshInstrumentInbox} className="rounded-xl">
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {/* High-Velocity Grid Entry */}
+          <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-5 shadow-xs">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold text-neutral-950">3. Rapid Analyzer Workstation — {selectedPanel.name}</h2>
+                <p className="text-xs text-neutral-500">
+                  Enter numeric measurements or tap quick qualitative buttons; run TekiLab AI for instant validation &amp; prescription suggestion.
                 </p>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setParameters((prev) => [
+                    ...prev,
+                    { name: 'Additional Parameter', value: '', unit: '', referenceRange: 'Normal', flag: 'Normal' }
+                  ])
+                }
+                className="rounded-xl border-neutral-200"
+              >
+                <Plus className="w-3.5 h-3.5 mr-1.5" />
+                Add Parameter
+              </Button>
+            </div>
 
-              <div className="flex items-center gap-2 shrink-0">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    navigator.clipboard?.writeText(dispatchRecord.whatsappDispatch!.whatsappUrl);
-                    setCopiedWhatsApp(true);
-                    toast.success('WhatsApp dispatch link copied.');
-                    setTimeout(() => setCopiedWhatsApp(false), 2000);
-                  }}
-                  className="h-9 px-3 bg-neutral-900 border-neutral-700 text-neutral-200 hover:bg-neutral-800 text-xs gap-1.5 cursor-pointer"
-                >
-                  {copiedWhatsApp ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                  {copiedWhatsApp ? 'Copied' : 'Copy Link'}
-                </Button>
-                <a
-                  href={dispatchRecord.whatsappDispatch.whatsappUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center justify-center h-9 px-4 rounded-md bg-green-600 hover:bg-green-500 text-white text-xs font-semibold gap-1.5 whitespace-nowrap transition-colors"
-                >
-                  Send via WhatsApp <ExternalLink className="w-3.5 h-3.5" />
-                </a>
+            <div className="overflow-x-auto border border-neutral-200 rounded-xl">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-neutral-50 border-b border-neutral-200 text-[11px] font-bold uppercase tracking-wider text-neutral-500">
+                    <th className="py-3 px-4">Parameter</th>
+                    <th className="py-3 px-4">Measured Value / Quick RDT</th>
+                    <th className="py-3 px-4">Unit</th>
+                    <th className="py-3 px-4">Reference Range</th>
+                    <th className="py-3 px-4">Flag</th>
+                    <th className="py-3 px-3 w-10"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-neutral-100 text-sm">
+                  {parameters.map((param, idx) => (
+                    <tr key={idx} className="hover:bg-neutral-50/50">
+                      <td className="py-2.5 px-4">
+                        <Input
+                          value={param.name}
+                          onChange={(e) => handleParamChange(idx, 'name', e.target.value)}
+                          className="h-9 rounded-lg border-neutral-200 text-xs font-semibold"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <div className="flex items-center gap-1.5">
+                          <Input
+                            value={param.value}
+                            onChange={(e) => handleParamChange(idx, 'value', e.target.value)}
+                            className="h-9 rounded-lg border-neutral-200 text-xs font-mono w-32"
+                          />
+                          {selectedPanel.isQualitative && (
+                            <div className="flex items-center gap-1">
+                              {(['Positive', 'Negative', 'Invalid'] as const).map((qVal) => (
+                                <button
+                                  key={qVal}
+                                  type="button"
+                                  onClick={() => {
+                                    handleParamChange(idx, 'value', qVal);
+                                    handleParamChange(
+                                      idx,
+                                      'flag',
+                                      qVal === 'Positive' ? 'Positive' : qVal === 'Negative' ? 'Negative' : 'Critical'
+                                    );
+                                  }}
+                                  className={`px-2 py-1 rounded-md text-[10px] font-bold border cursor-pointer transition-colors ${
+                                    param.value === qVal
+                                      ? qVal === 'Positive'
+                                        ? 'bg-neutral-950 text-white border-neutral-950'
+                                        : 'bg-blue-600 text-white border-blue-600'
+                                      : 'bg-white text-neutral-600 border-neutral-200 hover:bg-neutral-100'
+                                  }`}
+                                >
+                                  {qVal.slice(0, 3)}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <Input
+                          value={param.unit}
+                          onChange={(e) => handleParamChange(idx, 'unit', e.target.value)}
+                          className="h-9 rounded-lg border-neutral-200 text-xs w-24"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <Input
+                          value={param.referenceRange}
+                          onChange={(e) => handleParamChange(idx, 'referenceRange', e.target.value)}
+                          className="h-9 rounded-lg border-neutral-200 text-xs w-28 font-mono"
+                        />
+                      </td>
+                      <td className="py-2.5 px-4">
+                        <select
+                          value={param.flag}
+                          onChange={(e) => handleParamChange(idx, 'flag', e.target.value)}
+                          className={`h-9 px-2.5 rounded-lg text-xs font-semibold border outline-none ${
+                            param.flag === 'Critical'
+                              ? 'bg-red-50 text-red-700 border-red-300'
+                              : param.flag === 'High' || param.flag === 'Low' || param.flag === 'Positive'
+                                ? 'bg-blue-50 text-blue-700 border-blue-300'
+                                : 'bg-white text-neutral-700 border-neutral-200'
+                          }`}
+                        >
+                          <option value="Normal">Normal</option>
+                          <option value="High">High</option>
+                          <option value="Low">Low</option>
+                          <option value="Critical">Critical (Panic)</option>
+                          <option value="Positive">Positive</option>
+                          <option value="Negative">Negative</option>
+                        </select>
+                      </td>
+                      <td className="py-2.5 px-3">
+                        <button
+                          type="button"
+                          onClick={() => setParameters((prev) => prev.filter((_, i) => i !== idx))}
+                          className="p-1.5 text-neutral-400 hover:text-red-600 cursor-pointer"
+                          title="Remove row"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
+              <Button variant="ghost" onClick={() => setStep(2)} className="rounded-xl text-neutral-600">
+                <ArrowLeft className="w-4 h-4 mr-1.5" />
+                Back to Sample
+              </Button>
+              <Button
+                onClick={handleRunAIAnalysis}
+                disabled={isAnalyzing}
+                className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+              >
+                <Sparkles className="w-4 h-4 mr-2" />
+                {isAnalyzing ? 'Running TekiLab AI Engine...' : 'Run AI Verification & Outlier Check'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* STEP 4: APPROVAL (AUTO-VERIFICATION OR PATHOLOGIST SIGN-OFF)          */}
+      {/* ===================================================================== */}
+      {step === 4 && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* AI Diagnostic Findings */}
+          <div className="lg:col-span-7 bg-white border border-neutral-200 rounded-2xl p-6 space-y-5 shadow-xs">
+            <div className="flex items-start justify-between gap-4">
+              <div className="space-y-1">
+                <div className="text-xs font-bold uppercase tracking-wider text-blue-600">
+                  4. TekiLab AI Diagnostic Verification
+                </div>
+                <h2 className="text-lg font-bold text-neutral-950">
+                  {aiReport?.likelyDiagnosis || 'Diagnostic Summary'}
+                </h2>
+              </div>
+              <span
+                className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-wide shrink-0 ${
+                  aiReport?.severity === 'critical'
+                    ? 'bg-red-600 text-white'
+                    : aiReport?.severity === 'attention'
+                      ? 'bg-neutral-950 text-white'
+                      : 'bg-blue-50 text-blue-700 border border-blue-200'
+                }`}
+              >
+                {aiReport?.severity === 'critical'
+                  ? 'Critical Alert'
+                  : aiReport?.severity === 'attention'
+                    ? 'Abnormal Flag'
+                    : 'Auto-Verified Normal'}
+              </span>
+            </div>
+
+            <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200 space-y-1.5">
+              <div className="text-xs font-bold text-neutral-700">Patient-Friendly Clinical Summary</div>
+              <p className="text-sm text-neutral-800 leading-relaxed">
+                {aiReport?.clinicalSummary || 'All parameters evaluated against ISO reference ranges.'}
+              </p>
+            </div>
+
+            {aiReport?.flaggedParameters && aiReport.flaggedParameters.length > 0 && (
+              <div className="space-y-2">
+                <div className="text-xs font-bold text-neutral-700">Flagged Deviations &amp; Outlier Checks</div>
+                <div className="space-y-2">
+                  {aiReport.flaggedParameters.map((fp, i) => (
+                    <div key={i} className="p-3 rounded-xl border border-neutral-200 bg-white flex items-start gap-3">
+                      <AlertTriangle className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                      <div className="text-xs space-y-0.5">
+                        <div className="font-bold text-neutral-950">
+                          {fp.parameter}: <span className="font-mono text-blue-700">{fp.value}</span>{' '}
+                          <span className="text-neutral-400">(Ref: {fp.referenceRange})</span>
+                        </div>
+                        <div className="text-neutral-600">{fp.clinicalNote}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* AI-Suggested Prescription Protocol */}
+            {aiReport?.aiSuggestedDrug && (
+              <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-bold text-blue-700">
+                    <Pill className="w-4 h-4" />
+                    AI-Suggested Evidence-Based Prescription
+                  </div>
+                  <span className="text-[11px] font-mono text-neutral-500">
+                    {isPharmacyActive ? 'Pharmacy POS Active' : 'Backend e-Rx Ready'}
+                  </span>
+                </div>
+                <div className="text-sm font-bold text-neutral-950">
+                  {aiReport.aiSuggestedDrug.drugName} — {aiReport.aiSuggestedDrug.dosage}
+                </div>
+                <div className="text-xs text-neutral-700">
+                  {aiReport.aiSuggestedDrug.frequency} for {aiReport.aiSuggestedDrug.durationDays} days (Qty: {aiReport.aiSuggestedDrug.quantity})
+                </div>
+                <div className="text-xs text-neutral-600 pt-1 border-t border-blue-200/70">
+                  <span className="font-semibold text-neutral-900">Contraindication Guard:</span>{' '}
+                  {aiReport.aiSuggestedDrug.contraindicationCheck}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Approval / Sign-Off Panel */}
+          <div className="lg:col-span-5 bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xs">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-xl bg-neutral-950 text-white flex items-center justify-center">
+                  {approvalMode === 'AUTO_VERIFIED' ? (
+                    <ShieldCheck className="w-4 h-4 text-blue-400" />
+                  ) : (
+                    <ShieldAlert className="w-4 h-4 text-blue-400" />
+                  )}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-neutral-950">
+                    {approvalMode === 'AUTO_VERIFIED'
+                      ? 'Autonomous Auto-Verification'
+                      : 'Pathologist / Lead Scientist Sign-Off'}
+                  </h3>
+                  <p className="text-xs text-neutral-500">
+                    {approvalMode === 'AUTO_VERIFIED'
+                      ? 'All values within normal range — automatically cleared.'
+                      : 'Abnormal or critical markers require explicit sign-off.'}
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Validating Scientist / Pathologist</label>
+                <Input
+                  value={approvedBy}
+                  onChange={(e) => setApprovedBy(e.target.value)}
+                  className="h-10 rounded-xl border-neutral-200"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Clinical Interpretation Note</label>
+                <textarea
+                  value={approvalNotes}
+                  onChange={(e) => setApprovalNotes(e.target.value)}
+                  rows={4}
+                  className="w-full rounded-xl border border-neutral-200 p-3 text-xs text-neutral-800 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
+                />
               </div>
             </div>
-          )}
-        </div>
-      </div>
 
-      {/* Camera Barcode Scanner Modal */}
+            <div className="pt-4 border-t border-neutral-100 flex items-center justify-between gap-2">
+              <Button variant="ghost" onClick={() => setStep(3)} className="rounded-xl text-neutral-600">
+                <ArrowLeft className="w-4 h-4 mr-1.5" />
+                Edit Values
+              </Button>
+              {isApproved ? (
+                <Button
+                  onClick={() => setStep(5)}
+                  className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                >
+                  Continue to Delivery
+                  <ArrowRight className="w-4 h-4 ml-2" />
+                </Button>
+              ) : (
+                <Button
+                  onClick={handleSignOff}
+                  className="h-11 px-6 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white font-semibold"
+                >
+                  <CheckCircle2 className="w-4 h-4 mr-2 text-blue-400" />
+                  Approve &amp; Sign Result
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ===================================================================== */}
+      {/* STEP 5: INSTANT DELIVERY & PHARMACY HANDOFF                           */}
+      {/* ===================================================================== */}
+      {step === 5 && (
+        <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-6 shadow-xs">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-neutral-100 pb-5">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 text-xs font-bold text-blue-600">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>5. Validated &amp; Ready for Instant Delivery</span>
+              </div>
+              <h2 className="text-xl font-bold text-neutral-950">
+                {patientName || 'Walk-in Patient'} — {selectedPanel.name}
+              </h2>
+              <p className="text-xs text-neutral-500 font-mono">
+                UID: {sampleUid} · Approved by {approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verify' : approvedBy}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={handleResetWorkflow}
+              className="rounded-xl border-neutral-200 text-neutral-900 font-semibold"
+            >
+              <Plus className="w-4 h-4 mr-1.5" />
+              Start Next Rapid Sample
+            </Button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Action 1: Official PDF Report */}
+            <div className="p-5 rounded-2xl border border-neutral-200 bg-white flex flex-col justify-between space-y-4">
+              <div className="space-y-1.5">
+                <div className="w-10 h-10 rounded-xl bg-neutral-950 text-white flex items-center justify-center">
+                  <FileDown className="w-5 h-5" />
+                </div>
+                <h3 className="text-sm font-bold text-neutral-950">Official TekiLab PDF Report</h3>
+                <p className="text-xs text-neutral-500">
+                  Signed laboratory report branded with your official TekiLab logo, reference ranges, and AI summary.
+                </p>
+              </div>
+              <Button onClick={handleDownloadPDF} variant="outline" className="w-full h-10 rounded-xl border-neutral-300 font-semibold">
+                <FileDown className="w-4 h-4 mr-2" />
+                Download PDF Report
+              </Button>
+            </div>
+
+            {/* Action 2: WhatsApp / SMS Dispatch */}
+            <div className="p-5 rounded-2xl border border-blue-200 bg-blue-50/40 flex flex-col justify-between space-y-4">
+              <div className="space-y-1.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+                  <MessageSquare className="w-5 h-5" />
+                </div>
+                <h3 className="text-sm font-bold text-neutral-950">WhatsApp &amp; SMS Instant Dispatch</h3>
+                <p className="text-xs text-neutral-600">
+                  Log turnaround SLA, archive result to database, and send patient-friendly report via WhatsApp.
+                </p>
+              </div>
+              {dispatchResult ? (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-mono text-blue-700 font-semibold">
+                    ✓ {dispatchResult.pdfReportNumber} · TAT {formatElapsedTime(dispatchResult.turnaroundSeconds)}
+                  </div>
+                  <a
+                    href={dispatchResult.whatsappUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+                  >
+                    Open WhatsApp Dispatch
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              ) : (
+                <Button
+                  onClick={handleInstantDispatch}
+                  disabled={isDispatching}
+                  className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                >
+                  <Send className="w-4 h-4 mr-2" />
+                  {isDispatching ? 'Dispatching...' : 'Finalize & Dispatch Now'}
+                </Button>
+              )}
+            </div>
+
+            {/* Action 3: Direct Diagnostic-to-Pharmacy Prescription Handoff */}
+            <div className="p-5 rounded-2xl border border-neutral-200 bg-white flex flex-col justify-between space-y-4">
+              <div className="space-y-1.5">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+                  <Pill className="w-5 h-5" />
+                </div>
+                <h3 className="text-sm font-bold text-neutral-950">
+                  {isPharmacyActive ? 'Dispatch to Pharmacy POS Queue' : 'Generate Backend e-Prescription'}
+                </h3>
+                <p className="text-xs text-neutral-500">
+                  {aiReport?.aiSuggestedDrug
+                    ? `${aiReport.aiSuggestedDrug.drugName} (${aiReport.aiSuggestedDrug.dosage}) — backend hook stays active even when Pharmacy UI is muted.`
+                    : 'No drug protocol required for normal baseline result.'}
+                </p>
+              </div>
+              {rxHandoffResult ? (
+                <div className="space-y-2">
+                  <div className="text-[11px] font-mono text-neutral-700 font-semibold">
+                    ✓ {rxHandoffResult.handoffId} ({rxHandoffResult.deliveryMode === 'PHARMACY_POS_QUEUE' ? 'Queued in POS' : 'Saved e-Rx'})
+                  </div>
+                  {isPharmacyActive && (
+                    <Button
+                      variant="outline"
+                      onClick={() => onNavigate?.('pos')}
+                      className="w-full h-9 rounded-xl border-neutral-200 text-xs"
+                    >
+                      Open Pharmacy POS
+                    </Button>
+                  )}
+                </div>
+              ) : (
+                <Button
+                  onClick={handlePharmacyHandoff}
+                  disabled={isHandingOffRx || !aiReport?.aiSuggestedDrug}
+                  className="w-full h-10 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white font-semibold disabled:opacity-40"
+                >
+                  <Pill className="w-4 h-4 mr-2 text-blue-400" />
+                  {isHandingOffRx ? 'Sending Script...' : 'Generate Associated Prescription'}
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Recent Rapid Dispatches Table */}
+      {recentDispatches.length > 0 && (
+        <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 shadow-xs">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-bold text-neutral-950">Recent Rapid Diagnostic Dispatches</h3>
+            <span className="text-xs text-neutral-500">{recentDispatches.length} completed</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-neutral-200 text-neutral-500">
+                  <th className="py-2 pr-4 font-semibold">Sample UID</th>
+                  <th className="py-2 pr-4 font-semibold">Patient</th>
+                  <th className="py-2 pr-4 font-semibold">Test Panel</th>
+                  <th className="py-2 pr-4 font-semibold">TAT</th>
+                  <th className="py-2 font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {recentDispatches.slice(0, 6).map((rec) => (
+                  <tr key={rec.id}>
+                    <td className="py-2.5 pr-4 font-mono font-semibold text-neutral-950">{rec.accessionNumber}</td>
+                    <td className="py-2.5 pr-4 text-neutral-800">{rec.patientName}</td>
+                    <td className="py-2.5 pr-4 text-neutral-600">{rec.testName}</td>
+                    <td className="py-2.5 pr-4 font-mono text-neutral-700">
+                      {formatElapsedTime(rec.whatsappDispatch?.turnaroundSeconds || 120)}
+                    </td>
+                    <td className="py-2.5">
+                      <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-semibold">
+                        Dispatched
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <SampleScannerModal
         open={isScannerOpen}
         onOpenChange={setIsScannerOpen}
-        onDecoded={handleBarcodeLookup}
+        onDecoded={(code) => {
+          setSampleUid(code);
+          setCustodyVerified(true);
+          setIntakeSource('barcode_scan');
+          toast.success(`Scanned Specimen Barcode: ${code}`);
+        }}
       />
     </div>
   );

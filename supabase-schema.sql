@@ -792,3 +792,52 @@ ON CONFLICT (tenant_id) DO NOTHING;
 
 -- Complete!
 
+
+-- ==============================================================================
+-- TEKILAB OFFICIAL BRD EXTENSIONS: SPECIMEN CHAIN OF CUSTODY & RAPID TEST PANELS
+-- ==============================================================================
+CREATE TABLE IF NOT EXISTS public.specimens_custody (
+    id TEXT PRIMARY KEY,
+    sample_uid TEXT UNIQUE NOT NULL,
+    tenant_id TEXT NOT NULL REFERENCES public.tenant_configurations(tenant_id) ON DELETE CASCADE,
+    patient_id TEXT NOT NULL,
+    patient_name TEXT NOT NULL,
+    patient_phone TEXT,
+    panel_id TEXT,
+    panel_name TEXT NOT NULL,
+    sample_type TEXT NOT NULL DEFAULT 'Venous Blood',
+    tube_color TEXT DEFAULT 'Purple (EDTA)',
+    collection_site TEXT DEFAULT 'Express Intake Bay 1',
+    storage_location TEXT DEFAULT 'Rapid Bench A',
+    collector_id TEXT,
+    lifecycle_status TEXT NOT NULL DEFAULT 'Registered',
+    custody_trail JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX IF NOT EXISTS idx_specimens_custody_tenant_status ON public.specimens_custody(tenant_id, lifecycle_status);
+CREATE INDEX IF NOT EXISTS idx_specimens_custody_uid ON public.specimens_custody(sample_uid);
+
+CREATE TABLE IF NOT EXISTS public.rapid_test_panels (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT NOT NULL REFERENCES public.tenant_configurations(tenant_id) ON DELETE CASCADE,
+    code TEXT NOT NULL,
+    name TEXT NOT NULL,
+    category TEXT NOT NULL,
+    sample_type TEXT NOT NULL,
+    tube_color TEXT,
+    target_tat_minutes INTEGER NOT NULL DEFAULT 5,
+    price_naira NUMERIC(12, 2) DEFAULT 0,
+    parameters_schema JSONB NOT NULL DEFAULT '[]'::jsonb,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+ALTER TABLE public.specimens_custody ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.rapid_test_panels ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Allow full public access" ON public.specimens_custody;
+CREATE POLICY "Allow full public access" ON public.specimens_custody FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Allow full public access" ON public.rapid_test_panels;
+CREATE POLICY "Allow full public access" ON public.rapid_test_panels FOR ALL USING (true) WITH CHECK (true);

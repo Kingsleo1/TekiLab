@@ -785,3 +785,49 @@ INSERT INTO default_keyspace.tenant_configurations (
     '2026-11-23T06:00:00.000Z'
 );
 
+
+-- =================================================================================
+-- TEKILAB OFFICIAL BRD EXTENSIONS: SPECIMEN CHAIN OF CUSTODY & RAPID TEST PANELS
+-- =================================================================================
+
+-- SPECIMEN ACCESSIONING & CHAIN OF CUSTODY (ISO UID TK-YYYY-XXXXX)
+CREATE TABLE IF NOT EXISTS default_keyspace.specimens_custody (
+    id TEXT PRIMARY KEY,
+    sample_uid TEXT,
+    tenant_id TEXT,
+    patient_id TEXT,
+    patient_name TEXT,
+    patient_phone TEXT,
+    panel_id TEXT,
+    panel_name TEXT,
+    sample_type TEXT,
+    tube_color TEXT,
+    collection_site TEXT,
+    storage_location TEXT,
+    collector_id TEXT,
+    lifecycle_status TEXT,
+    custody_trail_json TEXT,
+    created_at TEXT,
+    updated_at TEXT
+);
+
+CREATE CUSTOM INDEX IF NOT EXISTS idx_specimens_uid ON default_keyspace.specimens_custody (sample_uid) USING 'StorageAttachedIndex';
+CREATE CUSTOM INDEX IF NOT EXISTS idx_specimens_tenant ON default_keyspace.specimens_custody (tenant_id) USING 'StorageAttachedIndex';
+CREATE CUSTOM INDEX IF NOT EXISTS idx_specimens_status ON default_keyspace.specimens_custody (lifecycle_status) USING 'StorageAttachedIndex';
+
+-- PRE-CONFIGURED RAPID TEST MASTER PANELS & REFERENCE RANGES
+CREATE TABLE IF NOT EXISTS default_keyspace.rapid_test_panels (
+    id TEXT PRIMARY KEY,
+    tenant_id TEXT,
+    code TEXT,
+    name TEXT,
+    category TEXT,
+    sample_type TEXT,
+    tube_color TEXT,
+    target_tat_minutes INT,
+    price_naira DECIMAL,
+    parameters_schema_json TEXT,
+    created_at TEXT
+);
+
+CREATE CUSTOM INDEX IF NOT EXISTS idx_rapid_panels_tenant ON default_keyspace.rapid_test_panels (tenant_id) USING 'StorageAttachedIndex';

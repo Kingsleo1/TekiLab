@@ -5,6 +5,12 @@ import {
   TenantFeatureToggles,
   TenantTierPreset
 } from '../types/tekilab';
+import {
+  fromTenantFeatureToggles,
+  getGlobalFeatureToggles,
+  saveGlobalFeatureToggles,
+  toTenantFeatureToggles
+} from '../config/featureToggles';
 
 const STORAGE_KEY_PREFIX = 'tekilab_tenant_config_v2_';
 
@@ -214,7 +220,10 @@ export const TenantModuleProvider: React.FC<{
         // fallback to default
       }
     }
-    return createDefaultTenantConfig(tenantId, tenantSlug, facilityName);
+    return {
+      ...createDefaultTenantConfig(tenantId, tenantSlug, facilityName),
+      modules: toTenantFeatureToggles(getGlobalFeatureToggles())
+    };
   });
 
   const [isLoading, setIsLoading] = useState(false);
@@ -273,6 +282,7 @@ export const TenantModuleProvider: React.FC<{
       setConfig(normalized);
       if (typeof localStorage !== 'undefined') {
         localStorage.setItem(storageKey, JSON.stringify(normalized));
+        saveGlobalFeatureToggles(fromTenantFeatureToggles(normalized.modules));
         window.dispatchEvent(
           new CustomEvent('tekilab_tenant_config_updated', { detail: normalized })
         );

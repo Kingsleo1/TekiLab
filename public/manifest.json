@@ -1,30 +1,30 @@
 {
   "id": "/",
-  "name": "Teki Med — Unified Healthcare Management Platform",
-  "short_name": "Teki Med",
-  "description": "The cloud healthcare operating system, EMR, laboratory, pharmacy, and POS platform of Teki Med.",
+  "name": "TekiLab — SaaS Laboratory Information Management System (LIMS)",
+  "short_name": "TekiLab",
+  "description": "High-speed SaaS LIMS & LIS engineered for 5-to-10 minute diagnostic turnaround, AI verification, and modular EMR/Pharmacy handoff.",
   "start_url": "/",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
   "theme_color": "#0F172A",
-  "background_color": "#0F172A",
-  "categories": ["business", "finance", "medical", "productivity"],
+  "background_color": "#FFFFFF",
+  "categories": ["medical", "healthcare", "productivity", "business"],
   "icons": [
     {
-      "src": "/favicon.png",
+      "src": "/pwa-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon.png",
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon.png",
+      "src": "/pwa-maskable-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
@@ -32,25 +32,25 @@
   ],
   "shortcuts": [
     {
-      "name": "POS Register",
-      "short_name": "POS",
-      "description": "Direct checkout and cashier terminal",
-      "url": "/?view=pos",
-      "icons": [{ "src": "/favicon.png", "sizes": "192x192" }]
+      "name": "Rapid Diagnostic Workflow",
+      "short_name": "Rapid Lab",
+      "description": "5-to-10 minute express accessioning, AI analysis & instant delivery",
+      "url": "/?view=rapid_console",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Inventory & Stock",
-      "short_name": "Inventory",
-      "description": "Stock levels, batches and price management",
-      "url": "/?view=inventory",
-      "icons": [{ "src": "/favicon.png", "sizes": "192x192" }]
+      "name": "Lab Worklist & Samples",
+      "short_name": "Worklist",
+      "description": "Sample accessioning, custody tracking & results archive",
+      "url": "/?view=lab",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
     },
     {
-      "name": "Owing & Debts",
-      "short_name": "Debtors",
-      "description": "Customer debts, overdue repayments and ledger",
-      "url": "/?view=owing",
-      "icons": [{ "src": "/favicon.png", "sizes": "192x192" }]
+      "name": "Feature Visibility Settings",
+      "short_name": "Modules",
+      "description": "Toggle auxiliary EMR, Pharmacy, Hospital & Billing modules",
+      "url": "/?view=module_config",
+      "icons": [{ "src": "/pwa-192x192.png", "sizes": "192x192" }]
     }
   ]
 }

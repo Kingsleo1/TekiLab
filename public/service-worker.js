@@ -1,5 +1,5 @@
-const CACHE_NAME = 'tekimed-pwa-v6';
-const STATIC_CACHE_NAME = 'tekimed-static-v6';
+const CACHE_NAME = 'tekilab-lims-pwa-v7';
+const STATIC_CACHE_NAME = 'tekilab-lims-static-v7';
 
 const ASSETS_TO_PRECACHE = [
   '/',
@@ -87,7 +87,7 @@ self.addEventListener('fetch', (event) => {
           const cached = await caches.match(request);
           if (cached) return cached;
           const indexFallback = await caches.match('/index.html') || await caches.match('/');
-          return indexFallback || new Response('<html><body><h2>Offline Mode Active</h2><p>Teki Pharm POS is ready for offline transactions.</p></body></html>', {
+          return indexFallback || new Response('<html><body><h2>TekiLab Offline Mode Active</h2><p>TekiLab LIMS is ready for offline rapid sample logging and will sync automatically when online.</p></body></html>', {
             headers: { 'Content-Type': 'text/html' }
           });
         })

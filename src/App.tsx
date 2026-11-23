@@ -41,7 +41,8 @@ import {
   Building2,
   Link2,
   Copy,
-  FlaskConical
+  FlaskConical,
+  Sliders
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Button } from '@/components/ui/button';
@@ -109,6 +110,9 @@ import { AppointmentsView } from './components/dashboard/AppointmentsView';
 import { HospitalBillingView } from './components/dashboard/HospitalBillingView';
 import { AIHealthcareAssistant } from './components/dashboard/AIHealthcareAssistant';
 import { FacilityOnboardingModal } from './components/dashboard/FacilityOnboardingModal';
+import { RapidResultConsole } from './components/dashboard/RapidResultConsole';
+import { TenantModuleSettingsView } from './components/dashboard/TenantModuleSettingsView';
+import { TenantModuleProvider, useTenantModules } from './context/TenantModuleContext';
 
 import { 
   DEFAULT_PATIENTS, 
@@ -128,6 +132,8 @@ import {
 } from './services/mockData';
 
 type DashView = 
+  | 'rapid_console'
+  | 'module_config'
   | 'overview' 
   | 'saas_control'
   | 'patients'
@@ -165,6 +171,15 @@ type DashView =
   | 'admin_orders';
 
 export default function App() {
+  return (
+    <TenantModuleProvider>
+      <AppShell />
+    </TenantModuleProvider>
+  );
+}
+
+function AppShell() {
+  const { isViewEnabled, mutedModulesCount } = useTenantModules();
   const pwa = usePWA();
   const getIsAdminUrl = () => {
     if (typeof window === 'undefined') return false;
@@ -198,7 +213,7 @@ export default function App() {
       return false;
     }
   });
-  const [view, setView] = useState<DashView>('overview');
+  const [view, setView] = useState<DashView>('rapid_console');
   const [selectedBranchId, setSelectedBranchId] = useState(() => {
     const savedUser = localStorage.getItem('ph_current_user');
     if (savedUser) {
@@ -635,7 +650,7 @@ export default function App() {
                 setCurrentPath('/admin');
               }
             } else {
-              setView('overview');
+              setView('rapid_console');
               const slugToUse = userDetails?.tenantSlug || getUrlTenantSlug();
               if (typeof window !== 'undefined') {
                 const targetPath = slugToUse ? `/${slugToUse}` : '/';
@@ -670,36 +685,47 @@ export default function App() {
     );
   }
 
-  // Unified Master Navigation Template - Synchronized across all dashboards
+  // TekiLab LIMS-First Master Navigation — Auxiliary modules dynamically muted via Feature Toggle Engine
   const masterSyncedSidebar = [
     { 
+      icon: <Zap size={20} className="text-blue-400" />, 
+      label: 'Rapid Workflow (5–10m)', 
+      view: 'rapid_console' 
+    },
+    { 
+      icon: <FlaskConical size={20} className="text-sky-400" />, 
+      label: 'Lab Worklist & Samples', 
+      view: 'lab' 
+    },
+    { 
+      icon: <Users size={20} className="text-slate-300" />, 
+      label: 'Patient Registry', 
+      view: 'patients' 
+    },
+    { 
+      icon: <Sparkles size={20} className="text-blue-300" />, 
+      label: 'AI Lab Assistant', 
+      view: 'ai_assistant' 
+    },
+    { 
       icon: <LayoutDashboard size={20} className="text-slate-400" />, 
-      label: 'Dashboard Overview', 
+      label: 'Lab Overview', 
       view: 'overview' 
     },
     { 
-      icon: <Building2 size={20} className="text-emerald-400" />, 
-      label: (role === 'admin' || currentUser?.role === 'Kernel Admin')
-        ? 'SaaS Businesses & Billing'
-        : 'Subscription & Link', 
-      view: 'saas_control' 
+      icon: <Sliders size={20} className="text-blue-400" />, 
+      label: 'Feature Visibility', 
+      view: 'module_config',
+      badge: mutedModulesCount > 0 ? `${mutedModulesCount} muted` : undefined
     },
     {
       icon: <Users size={20} className="text-sky-400" />,
       label: 'Clinical & EMR Suite',
       children: [
-        { label: 'Patient Master Index', view: 'patients' },
         { label: 'Doctor EMR & Consultations', view: 'emr' },
+        { label: 'Radiology & Medical Imaging', view: 'radiology' },
         { label: 'Hospital Queue Engine', view: 'queue' },
         { label: 'Appointments & Schedules', view: 'appointments' }
-      ]
-    },
-    {
-      icon: <FlaskConical size={20} className="text-purple-400" />,
-      label: 'Diagnostics & LIMS',
-      children: [
-        { label: 'Laboratory LIMS & Reports', view: 'lab' },
-        { label: 'Radiology & Medical Imaging', view: 'radiology' }
       ]
     },
     {
@@ -730,22 +756,24 @@ export default function App() {
       ]
     },
     { 
-      icon: <Sparkles size={20} className="text-purple-300" />, 
-      label: 'AI Healthcare Assistant', 
-      view: 'ai_assistant' 
+      icon: <Building2 size={20} className="text-slate-400" />, 
+      label: (role === 'admin' || currentUser?.role === 'Kernel Admin')
+        ? 'SaaS Tenants & Billing'
+        : 'Subscription & Portal', 
+      view: 'saas_control' 
     },
     { 
-      icon: <Users size={20} className="text-teal-400" />, 
+      icon: <Users size={20} className="text-slate-400" />, 
       label: 'Manage Staff', 
       view: (role === 'admin' || currentUser?.role === 'Kernel Admin') ? 'admin_users' : 'staff' 
     },
     { 
-      icon: <Store size={20} className="text-cyan-400" />, 
+      icon: <Store size={20} className="text-slate-400" />, 
       label: 'Branches & Facilities', 
       view: 'admin_merchants' 
     },
     { 
-      icon: <BarChart3 size={20} className="text-green-400" />, 
+      icon: <BarChart3 size={20} className="text-slate-400" />, 
       label: 'Analytics & Reports', 
       view: 'admin_reports' 
     },
@@ -848,22 +876,22 @@ export default function App() {
   };
 
   const getFilteredSidebar = () => {
-    if (role === 'admin' || currentUser?.role === 'Kernel Admin') {
-      return masterSyncedSidebar;
-    }
+    const isAdminUser = role === 'admin' || currentUser?.role === 'Kernel Admin';
 
     return masterSyncedSidebar.map((item: any) => {
-      // Filter children if present
+      // Filter children by BOTH Feature Muting Engine and role permissions
       if (item.children) {
         const filteredChildren = item.children.filter((child: any) => {
-          return hasAccessToView(child.view);
+          if (!isViewEnabled(child.view)) return false;
+          return isAdminUser || hasAccessToView(child.view);
         });
         if (filteredChildren.length === 0) return null;
         return { ...item, children: filteredChildren };
       }
 
-      // Check top-level view items
-      if (item.view && !hasAccessToView(item.view)) return null;
+      // Check top-level view items against Feature Muting Engine first
+      if (item.view && !isViewEnabled(item.view)) return null;
+      if (!isAdminUser && item.view && !hasAccessToView(item.view)) return null;
 
       return item;
     }).filter(Boolean);
@@ -877,8 +905,8 @@ export default function App() {
     !activeTenant?.logo?.startsWith('/logo.png') &&
     !activeTenant?.logo?.startsWith('/favicon.png') &&
     !activeTenant?.logo?.startsWith('/favicon-1.png');
-  const activeDashboardLogo = hasCustomCompanyLogo ? activeTenant!.logo! : '/logo.png?v=4';
-  const activeCollapsedIcon = hasCustomCompanyLogo ? activeTenant!.logo! : '/favicon.png?v=4';
+  const activeDashboardLogo = hasCustomCompanyLogo ? activeTenant!.logo! : '/logo.png?v=5';
+  const activeCollapsedIcon = hasCustomCompanyLogo ? activeTenant!.logo! : '/favicon.png?v=5';
 
   return (
     <div className="h-screen w-full max-w-full overflow-hidden bg-white flex font-sans selection:bg-blue-100 selection:text-blue-900">
@@ -1433,6 +1461,33 @@ export default function App() {
                           currentUser={currentUser}
                         />
                       )}
+                      {view === 'rapid_console' && (
+                        <RapidResultConsole
+                          labOrders={labOrders}
+                          labCatalog={labCatalog}
+                          patients={patients}
+                          onUpdateLabOrder={(updated) => {
+                            const exists = labOrders.some(l => l.id === updated.id);
+                            const newLabs = exists
+                              ? labOrders.map(l => l.id === updated.id ? updated : l)
+                              : [updated, ...labOrders];
+                            setLabOrders(newLabs);
+                            localStorage.setItem('tm_lab_orders', JSON.stringify(newLabs));
+                          }}
+                          onRegisterPatient={(newPatient) => {
+                            const exists = patients.some(p => p.id === newPatient.id);
+                            if (!exists) {
+                              const updatedPatients = [newPatient, ...patients];
+                              setPatients(updatedPatients);
+                              localStorage.setItem('tm_patients', JSON.stringify(updatedPatients));
+                            }
+                          }}
+                          onNavigate={(targetView) => setView(targetView as DashView)}
+                          currentUser={currentUser}
+                          companyLogo={activeDashboardLogo}
+                        />
+                      )}
+                      {view === 'module_config' && <TenantModuleSettingsView />}
                       {view === 'lab' && (
                         <LaboratoryLIMSView 
                           labOrders={labOrders} 

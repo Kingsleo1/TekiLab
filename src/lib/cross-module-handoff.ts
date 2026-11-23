@@ -25,6 +25,7 @@ export interface LabToPharmacyHandoffInput {
 export interface HandoffExecutionResult {
   ok: boolean;
   reason?: 'PHARMACY_MODULE_MUTED' | 'MISSING_SUGGESTED_DRUG' | 'SERVER_ERROR';
+  deliveryMode?: 'PHARMACY_POS_QUEUE' | 'BACKGROUND_E_PRESCRIPTION';
   message: string;
   payload?: PharmacyHandoffPayload;
 }
@@ -53,21 +54,17 @@ function saveLocalPharmacyHandoffQueue(queue: PharmacyHandoffPayload[]): void {
 /**
  * Cross-Module Handoff Function:
  * Passes a validated lab result payload (Patient ID, Test Result, AI Suggested Drug)
- * seamlessly into the Pharmacy module queue ONLY when the Pharmacy module is toggled ON.
+ * into the Pharmacy backend queue. Even when the Pharmacy UI module is muted,
+ * the backend hook stays 100% functional and stores a structured e-Prescription record.
  */
 export async function handoffLabResultToPharmacyQueue(
   input: LabToPharmacyHandoffInput,
   tenantConfig: TenantConfiguration
 ): Promise<HandoffExecutionResult> {
-  // 1. Strict Modular Mute Gate
-  if (!tenantConfig.modules.pharmacy) {
-    return {
-      ok: false,
-      reason: 'PHARMACY_MODULE_MUTED',
-      message:
-        'Pharmacy module is currently muted for this facility. Enable the Pharmacy module in Tenant Configuration to activate cross-module prescription handoffs.'
-    };
-  }
+  const isPharmacyUiActive = Boolean(tenantConfig.modules.pharmacy);
+  const deliveryMode: 'PHARMACY_POS_QUEUE' | 'BACKGROUND_E_PRESCRIPTION' = isPharmacyUiActive
+    ? 'PHARMACY_POS_QUEUE'
+    : 'BACKGROUND_E_PRESCRIPTION';
 
   const suggestedDrug = input.overrideDrug || input.aiReport.aiSuggestedDrug;
   if (!suggestedDrug || !suggestedDrug.drugName) {
@@ -129,7 +126,10 @@ export async function handoffLabResultToPharmacyQueue(
 
   return {
     ok: true,
-    message: `Prescription order (${suggestedDrug.drugName}) queued in Pharmacy for ${input.patientName}.`,
+    deliveryMode,
+    message: isPharmacyUiActive
+      ? `Prescription order (${suggestedDrug.drugName}) queued in Pharmacy POS for ${input.patientName}.`
+      : `e-Prescription (${suggestedDrug.drugName}) logged to backend Pharmacy queue for ${input.patientName} (Pharmacy UI currently muted).`,
     payload
   };
 }

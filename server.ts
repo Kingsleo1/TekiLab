@@ -985,6 +985,136 @@ async function startServer() {
         chronicConditions: Array.isArray(patient?.chronicConditions) ? patient.chronicConditions.slice(0, 15).map(String) : []
       };
 
+      const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
+
+      if (!hasGeminiKey) {
+        // Deterministic ISO-15189 Clinical Rule Engine fallback when GEMINI_API_KEY is not configured
+        const flagged = cleanParams.filter((p: any) =>
+          ['High', 'Low', 'Critical', 'Positive'].includes(p.flag)
+        );
+        const hasCritical = cleanParams.some((p: any) => p.flag === 'Critical');
+        const severity: 'normal' | 'attention' | 'critical' = hasCritical
+          ? 'critical'
+          : flagged.length > 0
+            ? 'attention'
+            : 'normal';
+
+        const joined = `${testName} ${cleanParams.map((p: any) => `${p.name}:${p.value}:${p.flag}`).join(' ')}`.toLowerCase();
+        const allergies = (patientContext.allergies || []).map((a: string) => a.toLowerCase());
+
+        let likelyDiagnosis = 'Normal Physiological Reference Values (Auto-Verifiable)';
+        let clinicalSummary =
+          'All measured diagnostic parameters fall strictly within biological reference intervals. Eligible for autonomous auto-verification.';
+        let aiSuggestedDrug: any = null;
+
+        if (joined.includes('malaria') && flagged.some((f: any) => f.name.toLowerCase().includes('malaria') || f.flag === 'Positive')) {
+          likelyDiagnosis = 'Acute Plasmodium falciparum Malaria (Confirmed Rapid Positive)';
+          clinicalSummary =
+            'Positive malaria parasitemia detected. Immediate first-line artemisinin-based combination therapy (ACT) is indicated alongside hydration and antipyretic support.';
+          aiSuggestedDrug = {
+            drugName: 'Artemether-Lumefantrine (Coartem 80/480mg)',
+            genericName: 'Artemether / Lumefantrine',
+            dosage: '80mg / 480mg',
+            frequency: 'Twice daily (0h, 8h, 24h, 36h, 48h, 60h)',
+            durationDays: 3,
+            quantity: 6,
+            rationale: 'WHO first-line ACT protocol for uncomplicated P. falciparum malaria.',
+            contraindicationCheck: allergies.some((a: string) => a.includes('artem'))
+              ? 'ALERT: Patient allergy flagged — consult physician for quinine/doxycycline alternative.'
+              : 'Cleared against listed patient allergies; take with fatty meal for optimal absorption.'
+          };
+        } else if (joined.includes('glucose') || joined.includes('hba1c')) {
+          if (flagged.length > 0) {
+            likelyDiagnosis = hasCritical
+              ? 'Severe Hyperglycemia / Uncontrolled Diabetes Mellitus (Critical Alert)'
+              : 'Elevated Glycemic Profile — Impaired Fasting Glucose / Type 2 Diabetes';
+            clinicalSummary =
+              'Elevated glycemic markers detected outside normal fasting targets. Correlate clinically for diabetic ketoacidosis if symptomatic and review glycemic therapy.';
+            aiSuggestedDrug = {
+              drugName: 'Metformin HCl XR 500mg',
+              genericName: 'Metformin Hydrochloride',
+              dosage: '500mg',
+              frequency: 'Once daily with evening meal',
+              durationDays: 30,
+              quantity: 30,
+              rationale: 'First-line oral antihyperglycemic agent for elevated fasting glucose & HbA1c.',
+              contraindicationCheck: 'Verify eGFR > 30 mL/min/1.73m² before initiating Metformin.'
+            };
+          }
+        } else if (joined.includes('typhoid') || joined.includes('widal')) {
+          if (flagged.length > 0) {
+            likelyDiagnosis = 'Enteric Fever / Salmonella Typhi Reactive Titre';
+            clinicalSummary =
+              'Significant Salmonella O/H antibody reactivity detected. Recommend targeted antimicrobial therapy and oral rehydration.';
+            aiSuggestedDrug = {
+              drugName: allergies.some((a: string) => a.includes('cipro') || a.includes('fluoro'))
+                ? 'Azithromycin 500mg'
+                : 'Ciprofloxacin 500mg',
+              genericName: allergies.some((a: string) => a.includes('cipro') || a.includes('fluoro'))
+                ? 'Azithromycin'
+                : 'Ciprofloxacin',
+              dosage: '500mg',
+              frequency: 'Twice daily',
+              durationDays: 7,
+              quantity: 14,
+              rationale: 'Targeted antimicrobial coverage for acute enteric fever.',
+              contraindicationCheck: 'Screened against patient allergy list; complete full course.'
+            };
+          }
+        } else if (joined.includes('urine') || joined.includes('nitrite') || joined.includes('leukocyte')) {
+          if (flagged.length > 0) {
+            likelyDiagnosis = 'Acute Bacterial Urinary Tract Infection (Pyuria / Nitrite Positive)';
+            clinicalSummary =
+              'Urinalysis shows positive inflammatory/bacterial markers consistent with acute UTI. Initiate empirical urinary antimicrobial therapy.';
+            aiSuggestedDrug = {
+              drugName: 'Nitrofurantoin Macrocrystals 100mg',
+              genericName: 'Nitrofurantoin',
+              dosage: '100mg',
+              frequency: 'Twice daily with food',
+              durationDays: 5,
+              quantity: 10,
+              rationale: 'First-line narrow-spectrum therapy for uncomplicated urinary tract infection.',
+              contraindicationCheck: 'Contraindicated if eGFR < 30 mL/min; cleared for standard adult dosing.'
+            };
+          }
+        } else if (flagged.length > 0) {
+          likelyDiagnosis = hasCritical
+            ? `Critical Diagnostic Deviation in ${testName}`
+            : `Abnormal Diagnostic Markers in ${testName}`;
+          clinicalSummary = `${flagged.length} parameter(s) deviated outside reference intervals (${flagged.map((f: any) => `${f.name}: ${f.value}`).join(', ')}). Pathologist review and targeted clinical follow-up recommended.`;
+          aiSuggestedDrug = {
+            drugName: 'Clinical Supportive / Physician Review Order',
+            genericName: 'Targeted Therapy Pending Clinician Confirmation',
+            dosage: 'Per Protocol',
+            frequency: 'As directed',
+            durationDays: 5,
+            quantity: 1,
+            rationale: `Generated from flagged ${testName} panel findings.`,
+            contraindicationCheck: 'Requires attending clinician confirmation against full patient chart.'
+          };
+        }
+
+        return res.json({
+          success: true,
+          analysis: {
+            anomalyDetected: flagged.length > 0,
+            severity,
+            likelyDiagnosis,
+            clinicalSummary,
+            flaggedParameters: flagged.map((f: any) => ({
+              parameter: f.name,
+              value: `${f.value} ${f.unit || ''}`.trim(),
+              referenceRange: f.referenceRange || 'See SOP',
+              deviation: f.flag,
+              clinicalNote: `${f.name} measured ${f.value} ${f.unit || ''} (${f.flag} vs. ${f.referenceRange || 'reference'}).`
+            })),
+            aiSuggestedDrug,
+            checkedAt: new Date().toISOString(),
+            model: 'tekilab-clinical-rules-v1 (offline-ready)'
+          }
+        });
+      }
+
       const ai = getGeminiClient();
       const prompt = [
         'You are a clinical pathology AI validation engine inside TekiLab LIMS.',
@@ -1307,16 +1437,15 @@ async function startServer() {
     const storedConfig = tenantConfigStore.get(tenantId);
     const isPharmacyActive = storedConfig ? Boolean(storedConfig.modules?.pharmacy) : Boolean(pharmacyEnabled);
 
-    if (!isPharmacyActive) {
-      return res.status(403).json({
-        error: 'Pharmacy module is muted for this tenant. Enable Pharmacy in Tenant Settings to receive lab handoffs.',
-        reason: 'PHARMACY_MODULE_MUTED'
-      });
-    }
+    // Per TekiLab BRD Section 2 & Module 5:
+    // Even when Pharmacy UI is muted, the backend hook remains 100% functional
+    // and stores a structured e-Prescription / background handoff record.
+    const deliveryMode = isPharmacyActive ? 'PHARMACY_POS_QUEUE' : 'BACKGROUND_E_PRESCRIPTION';
 
     const item = {
       ...payload,
       handoffId: String(payload.handoffId || `RX-LAB-${Date.now().toString(36).toUpperCase()}`),
+      deliveryMode,
       status: 'QUEUED',
       createdAt: payload.createdAt || new Date().toISOString()
     };
@@ -1343,7 +1472,12 @@ async function startServer() {
       created_at: item.createdAt
     });
 
-    return res.status(201).json({ success: true, item });
+    return res.status(201).json({
+      success: true,
+      item,
+      deliveryMode,
+      pharmacyUiMuted: !isPharmacyActive
+    });
   });
 
   app.get('/api/lims/handoff/pharmacy', (req, res) => {
@@ -1373,6 +1507,16 @@ async function startServer() {
       const { mode = 'protocol', query, patientContext, labHistory } = req.body || {};
       if (!query || typeof query !== 'string' || query.trim().length < 2) {
         return res.status(400).json({ error: 'Please enter a clinical or protocol query.' });
+      }
+
+      const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
+      if (!hasGeminiKey) {
+        return res.json({
+          success: true,
+          answer: `**TekiLab SOP Protocol Guidance (${String(mode)})**\n\nQuery: "${query.trim()}"\n\n- **Specimen Handling:** Verify sample UID (\`TK-YYYY-XXXXX\`) and tube integrity before loading onto analyzer.\n- **Rapid TAT Target:** Complete accessioning, analysis, and AI verification within 5–10 minutes.\n- **Critical Values:** Any Panic High/Low reading requires immediate Pathologist sign-off and clinician notification.\n\n*(Tip: Add \`GEMINI_API_KEY\` to \`.env\` for full conversational Gemini AI responses.)*`,
+          model: 'tekilab-protocol-offline-v1',
+          timestamp: new Date().toISOString()
+        });
       }
 
       const ai = getGeminiClient();

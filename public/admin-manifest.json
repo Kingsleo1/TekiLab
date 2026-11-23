@@ -1,30 +1,30 @@
 {
   "id": "/admin",
-  "name": "Teki Med Executive Super Admin",
-  "short_name": "Teki Med Admin",
-  "description": "Executive Root Terminal & Multi-Branch Healthcare SaaS Administration for Teki Med.",
+  "name": "TekiLab Executive Super Admin",
+  "short_name": "TekiLab Admin",
+  "description": "Multi-tenant SaaS Administration & Feature Muting Control Plane for TekiLab LIMS.",
   "start_url": "/admin",
   "scope": "/",
   "display": "standalone",
   "orientation": "any",
-  "theme_color": "#020617",
-  "background_color": "#020617",
-  "categories": ["business", "finance", "medical", "productivity"],
+  "theme_color": "#0F172A",
+  "background_color": "#FFFFFF",
+  "categories": ["medical", "business", "productivity"],
   "icons": [
     {
-      "src": "/favicon.png",
+      "src": "/pwa-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon.png",
+      "src": "/pwa-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/favicon.png",
+      "src": "/pwa-maskable-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "maskable"
