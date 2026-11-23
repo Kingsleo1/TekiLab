@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User account data including role-specific flags.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["patient", "merchant", "admin"] },
+        "pharmacyId": { "type": "string", "description": "Linked pharmacy ID for merchants" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "Pharmacy": {
+      "title": "Pharmacy Store",
+      "description": "A pharmacy vendor on the platform.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "address": { "type": "string" },
+        "ownerId": { "type": "string" },
+        "status": { "type": "string", "enum": ["active", "pending", "suspended"] },
+        "revenue": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "ownerId"]
+    },
+    "Product": {
+      "title": "Medical Product",
+      "description": "An item in a pharmacy's inventory.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "stock": { "type": "number" },
+        "unit": { "type": "string" },
+        "expiryDate": { "type": "string", "format": "date" },
+        "requiresPrescription": { "type": "boolean" },
+        "pharmacyId": { "type": "string" }
+      },
+      "required": ["name", "price", "stock", "pharmacyId"]
+    },
+    "Order": {
+      "title": "Order",
+      "description": "A purchase order from a patient.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "patientId": { "type": "string" },
+        "pharmacyId": { "type": "string" },
+        "items": { "type": "array" },
+        "status": { "type": "string", "enum": ["pending", "confirmed", "processing", "shipped", "delivered", "cancelled"] },
+        "total": { "type": "number" },
+        "prescriptionUrl": { "type": "string" },
+        "trackingHistory": { "type": "array" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["patientId", "pharmacyId", "items", "total"]
+    },
+    "SaleRecord": {
+      "title": "Sales Record",
+      "description": "A record of a completed transaction for financial reporting.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "pharmacyId": { "type": "string" },
+        "amount": { "type": "number" },
+        "type": { "type": "string", "enum": ["online", "pos"] },
+        "timestamp": { "type": "string", "format": "date-time" }
+      },
+      "required": ["pharmacyId", "amount", "type", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Global user profiles"
+    },
+    "/pharmacies/{pharmacyId}": {
+      "schema": "Pharmacy",
+      "description": "Pharmacy store details"
+    },
+    "/pharmacies/{pharmacyId}/inventory/{productId}": {
+      "schema": "Product",
+      "description": "Pharmacy-specific inventory items"
+    },
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Global orders table"
+    },
+    "/pharmacies/{pharmacyId}/sales/{saleId}": {
+      "schema": "SaleRecord",
+      "description": "Daily/monthly sales records for analytics"
+    }
+  }
+}

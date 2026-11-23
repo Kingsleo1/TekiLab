@@ -1,0 +1,8 @@
+{
+  "name": "TekiLab",
+  "description": "A robust Laboratory Management System Platform with integrated inventory management, POS, and real-time order tracking. This helps the lab manage Laboratory activities.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

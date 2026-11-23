@@ -1,0 +1,86 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 600" width="600" height="600">
+  <!-- Solid Crisp White Canvas -->
+  <rect width="600" height="600" fill="#FFFFFF" />
+
+  <defs>
+    <style>
+      .brand-blue { fill: #1E88E5; }
+      .brand-dark { fill: #000000; }
+      .text-tekipharm { 
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-size: 46px; 
+        font-weight: 800; 
+        letter-spacing: 0.03em; 
+      }
+      .text-pharmacy { 
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-size: 52px; 
+        font-weight: 900; 
+        letter-spacing: 0.05em; 
+      }
+      .text-tagline { 
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        font-size: 15px; 
+        font-weight: 500; 
+        letter-spacing: 0.32em; 
+      }
+    </style>
+  </defs>
+
+  <g transform="translate(0, 15)">
+    <!-- Center Medical Cross (+) -->
+    <!-- Horizontal Cross Arm -->
+    <rect x="268" y="200" width="64" height="26" rx="4" fill="#1E88E5" />
+    <!-- Vertical Cross Arm -->
+    <rect x="287" y="181" width="26" height="64" rx="4" fill="#1E88E5" />
+
+    <!-- Upper-Left Dark Swooshes -->
+    <!-- Outer darker arc -->
+    <path d="M 292 108 
+             C 240 112, 198 144, 184 192 
+             C 176 220, 180 248, 192 268
+             C 188 252, 188 234, 196 216
+             C 210 178, 245 142, 290 126
+             Z" 
+          fill="#1E232A" />
+
+    <!-- Subtle secondary inner curve -->
+    <path d="M 306 96 
+             C 252 100, 212 132, 194 178 
+             C 186 198, 184 218, 188 238
+             C 184 220, 186 200, 194 180
+             C 214 135, 256 102, 312 94
+             Z" 
+          fill="#525F6E" opacity="0.65" />
+
+    <!-- Human Caring Figure Head -->
+    <circle cx="362" cy="142" r="18" fill="#1E88E5" />
+
+    <!-- Blue Energetic Caring Swoosh (sweeping from bottom-left under cross to right figure arm) -->
+    <path d="M 194 240
+             C 182 285, 204 336, 248 360
+             C 288 382, 342 372, 376 338
+             C 412 302, 428 252, 420 202
+             C 416 182, 406 164, 395 152
+             C 404 172, 406 194, 399 220
+             C 386 268, 348 310, 302 322
+             C 254 334, 206 304, 202 254
+             C 202 248, 203 243, 205 238
+             Z" 
+          fill="#1E88E5" />
+
+    <!-- Inner lighter blue highlight curve -->
+    <path d="M 212 265
+             C 222 310, 260 346, 310 350
+             C 352 352, 392 328, 410 288
+             C 388 320, 348 338, 310 336
+             C 268 332, 232 302, 222 265
+             Z"
+          fill="#2196F3" opacity="0.4" />
+
+    <!-- Typography: Teki Pharm Health for the Nation -->
+    <text x="300" y="424" text-anchor="middle" class="text-tekipharm brand-blue">TEKI PHARM</text>
+    <text x="300" y="488" text-anchor="middle" class="text-pharmacy brand-dark">PHARMACY</text>
+    <text x="300" y="526" text-anchor="middle" class="text-tagline brand-dark">HEALTH FOR THE NATION</text>
+  </g>
+</svg>

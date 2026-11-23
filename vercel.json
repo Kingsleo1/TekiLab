@@ -1,0 +1,18 @@
+{
+  "cleanUrls": true,
+  "trailingSlash": false,
+  "rewrites": [
+    {
+      "source": "/api/astra/:path*",
+      "destination": "/api/astra?__path=:path*"
+    },
+    {
+      "source": "/api/astra",
+      "destination": "/api/astra"
+    },
+    {
+      "source": "/((?!api/|assets/|.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
