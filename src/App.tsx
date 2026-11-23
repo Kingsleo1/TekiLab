@@ -112,7 +112,11 @@ import { AIHealthcareAssistant } from './components/dashboard/AIHealthcareAssist
 import { FacilityOnboardingModal } from './components/dashboard/FacilityOnboardingModal';
 import { RapidResultConsole } from './components/dashboard/RapidResultConsole';
 import { TenantModuleSettingsView } from './components/dashboard/TenantModuleSettingsView';
+import { PatientPortalView } from './components/dashboard/PatientPortalView';
+import { DepartmentCommHub } from './components/dashboard/DepartmentCommHub';
 import { TenantModuleProvider, useTenantModules } from './context/TenantModuleContext';
+import { NotificationProvider, useNotifications } from './context/NotificationContext';
+import { getRoleDefinition } from './config/roles';
 
 import { 
   DEFAULT_PATIENTS, 
@@ -134,6 +138,7 @@ import {
 type DashView = 
   | 'rapid_console'
   | 'module_config'
+  | 'patient_portal'
   | 'overview' 
   | 'saas_control'
   | 'patients'
@@ -172,14 +177,18 @@ type DashView =
 
 export default function App() {
   return (
-    <TenantModuleProvider>
-      <AppShell />
-    </TenantModuleProvider>
+    <NotificationProvider>
+      <TenantModuleProvider>
+        <AppShell />
+      </TenantModuleProvider>
+    </NotificationProvider>
   );
 }
 
 function AppShell() {
   const { isViewEnabled, mutedModulesCount } = useTenantModules();
+  const { unreadCount } = useNotifications();
+  const [isCommHubOpen, setIsCommHubOpen] = useState(false);
   const pwa = usePWA();
   const getIsAdminUrl = () => {
     if (typeof window === 'undefined') return false;
@@ -650,7 +659,8 @@ function AppShell() {
                 setCurrentPath('/admin');
               }
             } else {
-              setView('rapid_console');
+              const roleDef = getRoleDefinition(userDetails?.role);
+              setView((roleDef.defaultView as DashView) || 'rapid_console');
               const slugToUse = userDetails?.tenantSlug || getUrlTenantSlug();
               if (typeof window !== 'undefined') {
                 const targetPath = slugToUse ? `/${slugToUse}` : '/';
@@ -699,8 +709,18 @@ function AppShell() {
     },
     { 
       icon: <Users size={20} className="text-slate-300" />, 
-      label: 'Patient Registry', 
+      label: 'Registered Patients', 
       view: 'patients' 
+    },
+    { 
+      icon: <ClipboardList size={20} className="text-blue-400" />, 
+      label: 'Queue & Bookings', 
+      view: 'queue' 
+    },
+    { 
+      icon: <UserIcon size={20} className="text-sky-300" />, 
+      label: 'Patient Portal', 
+      view: 'patient_portal' 
     },
     { 
       icon: <Sparkles size={20} className="text-blue-300" />, 
@@ -970,6 +990,24 @@ function AppShell() {
                 {/* Visual Divider Line */}
                 <div className="border-t border-slate-800/80 my-3 mx-2"></div>
 
+                {/* Beep Department / Live Alerts Button */}
+                <button
+                  onClick={() => setIsCommHubOpen(true)}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all group relative text-blue-300 hover:text-white hover:bg-blue-600/20 font-medium text-xs cursor-pointer mb-1 border border-blue-500/25"
+                >
+                  <Bell size={16} className="text-blue-400 shrink-0" />
+                  {isSidebarOpen && (
+                    <span className="font-semibold text-xs truncate flex-1 text-left">
+                      Beep Department
+                    </span>
+                  )}
+                  {isSidebarOpen && unreadCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+
                 {/* Install App Link */}
                 {!pwa.isInstalled && (
                   <button
@@ -1094,7 +1132,25 @@ function AppShell() {
                           {/* Visual Divider */}
                           <div className="border-t border-slate-800/80 my-3 mx-1"></div>
 
-                          {/* Install App Link */}
+                          {/* Beep Department / Live Alerts Button */}
+                <button
+                  onClick={() => setIsCommHubOpen(true)}
+                  className="w-full flex items-center gap-3 px-3 py-2 rounded-xl transition-all group relative text-blue-300 hover:text-white hover:bg-blue-600/20 font-medium text-xs cursor-pointer mb-1 border border-blue-500/25"
+                >
+                  <Bell size={16} className="text-blue-400 shrink-0" />
+                  {isSidebarOpen && (
+                    <span className="font-semibold text-xs truncate flex-1 text-left">
+                      Beep Department
+                    </span>
+                  )}
+                  {isSidebarOpen && unreadCount > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full bg-blue-600 text-white text-[10px] font-bold">
+                      {unreadCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Install App Link */}
                           {!pwa.isInstalled && (
                             <button
                               onClick={() => {
@@ -1488,6 +1544,30 @@ function AppShell() {
                         />
                       )}
                       {view === 'module_config' && <TenantModuleSettingsView />}
+                      {view === 'patient_portal' && (
+                        <PatientPortalView
+                          currentUser={currentUser}
+                          labOrders={labOrders}
+                          onOnlineBookingCreated={(booking) => {
+                            const newTicket: any = {
+                              id: `q-${Date.now()}`,
+                              ticketNumber: `ONL-${Math.floor(100 + Math.random() * 899)}`,
+                              patientId: currentUser?.id || `pat-${Date.now()}`,
+                              patientName: booking.patientName,
+                              mrn: currentUser?.mrn || `TK-${Math.floor(10000 + Math.random() * 89999)}`,
+                              department: 'Reception',
+                              orderSource: 'ONLINE',
+                              status: 'Waiting',
+                              priority: 'Priority',
+                              issuedAt: new Date().toISOString(),
+                              notes: `Online Paid (${booking.paymentRef}): ${booking.tests.map((t) => t.name).join(', ')}`
+                            };
+                            const nextQ = [newTicket, ...queueTickets];
+                            setQueueTickets(nextQ);
+                            localStorage.setItem('tm_queue_tickets', JSON.stringify(nextQ));
+                          }}
+                        />
+                      )}
                       {view === 'lab' && (
                         <LaboratoryLIMSView 
                           labOrders={labOrders} 
@@ -1654,6 +1734,14 @@ function AppShell() {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Inter-Department Beep & Live Alert Hub */}
+        <DepartmentCommHub
+          open={isCommHubOpen}
+          onOpenChange={setIsCommHubOpen}
+          currentDepartment={getRoleDefinition(currentUser?.role).department}
+          currentUserName={currentUser?.name || 'TekiLab Staff'}
+        />
 
         {/* Super Admin Security Credentials Modal */}
         <AdminSecurityModal 

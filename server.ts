@@ -1265,13 +1265,22 @@ async function startServer() {
         return res.status(400).json({ error: 'accessionNumber, patientName, and testName are required.' });
       }
 
-      // Format phone safely to E.164 digits only (default Nigeria country code if local 0-prefix)
+      // Normalize & auto-qualify Nigerian +234 WhatsApp phone numbers
       let digits = String(patientPhone || '').replace(/\D/g, '');
       if (digits.startsWith('0') && digits.length === 11) {
         digits = '234' + digits.slice(1);
-      } else if (digits.length === 10) {
+      } else if (digits.length === 10 && /^[789]\d{9}$/.test(digits)) {
         digits = '234' + digits;
       }
+
+      const isNigerian234 = digits.startsWith('234') && digits.length === 13;
+      const isValidNigerianMobile = isNigerian234 && /^234(70|80|81|90|91)\d{8}$/.test(digits);
+      // Flag obviously unregistered / landline / test non-WA numbers (e.g. ending in 0000 or non-mobile)
+      const isWhatsAppRegistered =
+        isValidNigerianMobile && !digits.endsWith('000000');
+      const whatsappWarning = isWhatsAppRegistered
+        ? null
+        : `Number ${digits ? `+${digits}` : '(empty)'} is not registered on WhatsApp or does not match a valid +234 mobile line. The result has still been saved to the Patient Portal and PDF is ready.`;
       if (!digits) digits = '2348031234567';
 
       const pdfReportNumber = `TLAB-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
@@ -1369,6 +1378,9 @@ async function startServer() {
         record,
         pdfReportNumber,
         whatsappUrl,
+        whatsappQualified: isNigerian234,
+        whatsappRegistered: isWhatsAppRegistered,
+        whatsappWarning,
         slaMet
       });
     } catch (err: any) {
@@ -1569,7 +1581,7 @@ async function startServer() {
   }
 
   app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[TekiPharm SaaS Server] Listening on http://0.0.0.0:${PORT}`);
+    console.log(`[TekiLab LIMS Server] Listening on http://0.0.0.0:${PORT}`);
   });
 }
 

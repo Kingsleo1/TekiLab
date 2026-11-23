@@ -1,249 +1,499 @@
-import React, { useState } from 'react';
-import { 
-  Clock, 
-  Users, 
-  Volume2, 
-  CheckCircle2, 
-  AlertTriangle, 
-  Plus, 
-  Search, 
-  ArrowRight 
+import React, { useState, useMemo } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import {
+  Users,
+  Search,
+  List,
+  LayoutGrid,
+  ChevronRight,
+  Plus,
+  BellRing,
+  CheckCircle2,
+  Clock,
+  ArrowRight,
+  Globe,
+  Footprints,
+  FlaskConical,
+  Syringe,
+  Stethoscope,
+  ClipboardCheck
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { QueueTicket, PatientRecord } from '../../types/pharmacy';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from '@/components/ui/dialog';
+import { PatientRecord } from '../../types/pharmacy';
+import { ALL_DEPARTMENTS, TekiLabDepartment } from '../../config/roles';
+import { useNotifications } from '../../context/NotificationContext';
 import { toast } from 'sonner';
 
 interface HospitalQueueManagerProps {
-  queueTickets: QueueTicket[];
+  queueTickets: any[];
   patients: PatientRecord[];
-  onIssueTicket: (ticket: QueueTicket) => void;
-  onUpdateTicketStatus: (ticketId: string, status: 'Waiting' | 'Called' | 'In Progress' | 'Completed' | 'Cancelled') => void;
+  onIssueTicket: (ticket: any) => void;
+  onUpdateTicketStatus: (ticketId: string, status: string) => void;
   currentUser?: any;
 }
 
-const DEPARTMENTS = [
-  'Reception',
-  'Triage',
-  'Doctor Consultation',
-  'Laboratory',
-  'Radiology',
-  'Pharmacy',
-  'Billing'
-] as const;
+const FLOW_STAGES = [
+  {
+    id: 'Reception',
+    label: '1. Check-In',
+    desc: 'Online / Walk-In Intake',
+    icon: ClipboardCheck
+  },
+  {
+    id: 'Phlebotomy',
+    label: '2. Sample',
+    desc: 'QR Tag & Collection',
+    icon: Syringe
+  },
+  {
+    id: 'Laboratory',
+    label: '3. Lab Analysis',
+    desc: '5–10m Rapid Test',
+    icon: FlaskConical
+  },
+  {
+    id: 'Doctor Consultation',
+    label: '4. Consult / Ready',
+    desc: 'Review & Delivery',
+    icon: Stethoscope
+  }
+];
 
 export function HospitalQueueManager({
   queueTickets,
   patients,
   onIssueTicket,
-  onUpdateTicketStatus,
-  currentUser
+  onUpdateTicketStatus
 }: HospitalQueueManagerProps) {
-  const [selectedDept, setSelectedDept] = useState<string>('Doctor Consultation');
-  const [selectedPatientId, setSelectedPatientId] = useState(patients[0]?.id || '');
-  const [priority, setPriority] = useState<'Normal' | 'Urgent' | 'Emergency'>('Normal');
+  const { notifyTransfer, notifyOrderArrival } = useNotifications();
 
-  const activeDeptTickets = queueTickets.filter(q => q.department === selectedDept);
+  const [sourceFilter, setSourceFilter] = useState<'ALL' | 'ONLINE' | 'WALK_IN'>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [selectedTicket, setSelectedTicket] = useState<any | null>(null);
+  const [isIssueOpen, setIsIssueOpen] = useState(false);
 
-  const handleIssueNewTicket = (e: React.FormEvent) => {
+  // New Ticket Form
+  const [patientName, setPatientName] = useState('');
+  const [orderSource, setOrderSource] = useState<'WALK_IN' | 'ONLINE'>('WALK_IN');
+  const [department, setDepartment] = useState<TekiLabDepartment>('Laboratory');
+  const [notes, setNotes] = useState('');
+
+  // Transfer state inside detail modal
+  const [transferTarget, setTransferTarget] = useState<TekiLabDepartment>('Laboratory');
+
+  const filteredTickets = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return queueTickets.filter((t) => {
+      const src = t.orderSource === 'ONLINE' ? 'ONLINE' : 'WALK_IN';
+      if (sourceFilter !== 'ALL' && src !== sourceFilter) return false;
+      if (!q) return true;
+      return (
+        t.patientName?.toLowerCase().includes(q) ||
+        t.ticketNumber?.toLowerCase().includes(q) ||
+        t.department?.toLowerCase().includes(q)
+      );
+    });
+  }, [queueTickets, sourceFilter, searchTerm]);
+
+  const counts = useMemo(() => {
+    const online = queueTickets.filter((t) => t.orderSource === 'ONLINE').length;
+    const walkIn = queueTickets.length - online;
+    const active = queueTickets.filter((t) => t.status !== 'Completed').length;
+    return { online, walkIn, active };
+  }, [queueTickets]);
+
+  const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();
-    const patient = patients.find(p => p.id === selectedPatientId);
-    if (!patient) {
-      toast.error('Select a patient.');
+    if (!patientName.trim()) {
+      toast.error('Enter patient name to issue a queue ticket.');
       return;
     }
 
-    const nextNum = activeDeptTickets.length + 101;
-    const newTicket: QueueTicket = {
+    const prefix = orderSource === 'ONLINE' ? 'ONL' : 'WLK';
+    const ticket = {
       id: `q-${Date.now()}`,
-      patientId: patient.id,
-      patientName: patient.fullName,
-      mrn: patient.mrn,
-      ticketNumber: `Q-${nextNum}`,
-      department: selectedDept as any,
-      priority,
+      ticketNumber: `${prefix}-${Math.floor(100 + Math.random() * 899)}`,
+      patientId: `pat-${Date.now()}`,
+      patientName: patientName.trim(),
+      mrn: `TK-${Math.floor(10000 + Math.random() * 89999)}`,
+      department,
+      orderSource,
       status: 'Waiting',
-      estimatedWaitMins: activeDeptTickets.filter(q => q.status === 'Waiting').length * 10,
-      createdAt: new Date().toISOString()
+      priority: orderSource === 'ONLINE' ? 'Priority' : 'Normal',
+      issuedAt: new Date().toISOString(),
+      notes: notes.trim() || `${orderSource === 'ONLINE' ? 'Online booking' : 'Walk-in client'} check-in`
     };
 
-    onIssueTicket(newTicket);
-    toast.success(`Issued Ticket ${newTicket.ticketNumber} for ${selectedDept}`);
+    onIssueTicket(ticket);
+    notifyOrderArrival({
+      orderSource,
+      patientName: ticket.patientName,
+      testSummary: `${ticket.department} Queue (${ticket.ticketNumber})`
+    });
+    setIsIssueOpen(false);
+    setPatientName('');
+    setNotes('');
+  };
+
+  const handleTransferTicket = () => {
+    if (!selectedTicket) return;
+    onUpdateTicketStatus(selectedTicket.id, 'In Progress');
+    notifyTransfer({
+      fromDepartment: selectedTicket.department || 'Reception',
+      toDepartment: transferTarget,
+      patientName: selectedTicket.patientName,
+      notes: `Queue Ticket ${selectedTicket.ticketNumber}`
+    });
+    setSelectedTicket(null);
   };
 
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-950 p-6 rounded-2xl text-white shadow-lg border border-slate-800">
+    <div className="max-w-5xl mx-auto space-y-6 pb-10 font-sans text-neutral-950">
+      {/* Header */}
+      <div className="bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Badge className="bg-indigo-500/20 text-indigo-300 border-indigo-400/30 text-xs">Hospital Operations</Badge>
-            <span className="text-xs text-slate-400">Department Queue Engine</span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <Clock className="w-6 h-6 text-indigo-400" /> Multi-Department Patient Queue
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-950">
+            Live Queue &amp; Patient Flow
           </h1>
-          <p className="text-slate-300 text-xs mt-1">
-            Real-time patient calling, triage priority routing, and estimated wait times across all hospital departments.
+          <p className="text-sm text-neutral-500 mt-0.5">
+            {counts.active} active · {counts.online} online bookings · {counts.walkIn} walk-in clients
           </p>
         </div>
+        <Button
+          onClick={() => setIsIssueOpen(true)}
+          className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shrink-0"
+        >
+          <Plus className="w-4 h-4 mr-2" />
+          Check In Patient
+        </Button>
       </div>
 
-      {/* Department Selector */}
-      <div className="flex gap-2 overflow-x-auto pb-2">
-        {DEPARTMENTS.map((dept) => {
-          const count = queueTickets.filter(q => q.department === dept && q.status === 'Waiting').length;
-          return (
+      {/* Animated Step-by-Step Visual Flow Diagram */}
+      <div className="bg-white border border-neutral-200 rounded-2xl p-6 shadow-xs">
+        <div className="text-xs font-bold uppercase tracking-wider text-neutral-400 mb-4">
+          Live Laboratory Patient Journey
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 relative">
+          {FLOW_STAGES.map((stage, idx) => {
+            const Icon = stage.icon;
+            const stageCount = queueTickets.filter(
+              (t) =>
+                t.status !== 'Completed' &&
+                (t.department?.toLowerCase().includes(stage.id.toLowerCase().split(' ')[0]) ||
+                  (stage.id === 'Reception' && t.status === 'Waiting'))
+            ).length;
+
+            return (
+              <motion.div
+                key={stage.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: idx * 0.08 }}
+                className="relative p-4 rounded-2xl border border-neutral-200 bg-neutral-50/50 flex flex-col justify-between gap-3"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center">
+                    <Icon className="w-4 h-4" />
+                  </div>
+                  <span className="text-lg font-mono font-bold text-neutral-950">{stageCount}</span>
+                </div>
+                <div>
+                  <div className="text-sm font-bold text-neutral-950">{stage.label}</div>
+                  <div className="text-xs text-neutral-500">{stage.desc}</div>
+                </div>
+                {idx < FLOW_STAGES.length - 1 && (
+                  <div className="hidden sm:flex absolute -right-2.5 top-1/2 -translate-y-1/2 z-10 w-5 h-5 rounded-full bg-white border border-neutral-200 items-center justify-center text-blue-600">
+                    <ArrowRight className="w-3 h-3" />
+                  </div>
+                )}
+              </motion.div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Online vs Walk-In Filter + Search + List/Grid Toggle */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+        <div className="inline-flex items-center p-1 rounded-xl bg-neutral-100 border border-neutral-200 self-start">
+          {[
+            { id: 'ALL', label: `All (${queueTickets.length})` },
+            { id: 'ONLINE', label: `Online (${counts.online})` },
+            { id: 'WALK_IN', label: `Walk-In (${counts.walkIn})` }
+          ].map((tab) => (
             <button
-              key={dept}
-              onClick={() => setSelectedDept(dept)}
-              className={`p-3 rounded-xl border text-xs font-semibold whitespace-nowrap transition-all flex items-center gap-2 ${
-                selectedDept === dept 
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow' 
-                  : 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50'
+              key={tab.id}
+              type="button"
+              onClick={() => setSourceFilter(tab.id as any)}
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold cursor-pointer transition-colors ${
+                sourceFilter === tab.id ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
               }`}
             >
-              <span>{dept}</span>
-              {count > 0 && <Badge className="bg-amber-400 text-slate-950 text-[10px]">{count}</Badge>}
+              {tab.label}
             </button>
-          );
-        })}
+          ))}
+        </div>
+
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search queue by patient name or ticket..."
+            className="pl-10 h-10 bg-white border-neutral-200 rounded-xl text-sm"
+          />
+        </div>
+
+        <div className="inline-flex items-center p-1 rounded-xl bg-neutral-100 border border-neutral-200 self-end md:self-auto">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
+              viewMode === 'list' ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            List
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
+              viewMode === 'grid' ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            Grid
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Department Active Queue */}
-        <div className="lg:col-span-8 space-y-4">
-          <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
-            <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Users className="w-4 h-4 text-indigo-600" /> {selectedDept} Work Queue
-              </CardTitle>
-              <Badge className="bg-indigo-100 text-indigo-900 font-mono text-xs">{activeDeptTickets.length} Patients</Badge>
-            </CardHeader>
-            <CardContent className="p-4 space-y-3">
-              {activeDeptTickets.length === 0 ? (
-                <p className="text-xs text-center py-10 text-slate-500">No active queue tickets for {selectedDept}.</p>
-              ) : (
-                activeDeptTickets.map((ticket) => (
-                  <div 
-                    key={ticket.id}
-                    className="flex flex-col md:flex-row md:items-center justify-between p-4 bg-slate-50 dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 gap-3 text-xs"
+      {/* Clean List View (Default: Just Name) or Grid View */}
+      {filteredTickets.length === 0 ? (
+        <div className="bg-white border border-dashed border-neutral-200 rounded-2xl py-16 text-center text-sm text-neutral-400">
+          Queue is clear. Check in a walk-in client or wait for an online booking.
+        </div>
+      ) : viewMode === 'list' ? (
+        <div className="bg-white border border-neutral-200 rounded-2xl divide-y divide-neutral-100 overflow-hidden shadow-xs">
+          <AnimatePresence>
+            {filteredTickets.map((ticket) => (
+              <motion.button
+                key={ticket.id}
+                layout
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                type="button"
+                onClick={() => setSelectedTicket(ticket)}
+                className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-blue-50/40 transition-colors cursor-pointer group"
+              >
+                <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700">
+                  {ticket.patientName}
+                </span>
+                <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600" />
+              </motion.button>
+            ))}
+          </AnimatePresence>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filteredTickets.map((ticket) => (
+            <button
+              key={ticket.id}
+              type="button"
+              onClick={() => setSelectedTicket(ticket)}
+              className="p-4 bg-white border border-neutral-200 rounded-2xl text-left hover:border-blue-500 transition-all cursor-pointer flex items-center justify-between gap-3 group"
+            >
+              <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700 truncate">
+                {ticket.patientName}
+              </span>
+              <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600 shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Queue Ticket Detail Modal */}
+      <Dialog open={Boolean(selectedTicket)} onOpenChange={(o) => !o && setSelectedTicket(null)}>
+        <DialogContent className="sm:max-w-lg bg-white border border-neutral-200 rounded-2xl">
+          {selectedTicket && (
+            <>
+              <DialogHeader>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="font-mono text-xs font-bold text-blue-600">{selectedTicket.ticketNumber}</span>
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-[10px] font-bold uppercase ${
+                      selectedTicket.orderSource === 'ONLINE'
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-neutral-950 text-white'
+                    }`}
                   >
-                    <div className="flex items-center gap-3">
-                      <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white font-mono font-bold text-base flex items-center justify-center shadow-sm">
-                        {ticket.ticketNumber}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-bold text-sm text-slate-900 dark:text-slate-100">{ticket.patientName}</span>
-                          <Badge className={
-                            ticket.priority === 'Emergency' ? 'bg-rose-500 text-white' :
-                            ticket.priority === 'Urgent' ? 'bg-amber-500 text-white' : 'bg-slate-200 text-slate-800'
-                          }>
-                            {ticket.priority}
-                          </Badge>
-                        </div>
-                        <p className="text-slate-500 mt-0.5">MRN: <span className="font-mono text-indigo-600">{ticket.mrn}</span></p>
-                      </div>
-                    </div>
+                    {selectedTicket.orderSource === 'ONLINE' ? 'Online Booking' : 'Walk-In Client'}
+                  </span>
+                </div>
+                <DialogTitle className="text-xl font-bold text-neutral-950">
+                  {selectedTicket.patientName}
+                </DialogTitle>
+                <DialogDescription className="text-xs text-neutral-500">
+                  Department: {selectedTicket.department} · Status: {selectedTicket.status}
+                </DialogDescription>
+              </DialogHeader>
 
-                    <div className="flex items-center gap-2">
-                      {ticket.status === 'Waiting' && (
-                        <Button 
-                          size="sm" 
-                          onClick={() => onUpdateTicketStatus(ticket.id, 'Called')} 
-                          className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2 text-xs"
-                        >
-                          <Volume2 className="w-3.5 h-3.5" /> Call Patient
-                        </Button>
-                      )}
-
-                      {ticket.status === 'Called' && (
-                        <Button 
-                          size="sm" 
-                          onClick={() => onUpdateTicketStatus(ticket.id, 'In Progress')} 
-                          className="bg-amber-600 hover:bg-amber-500 text-white gap-2 text-xs"
-                        >
-                          Start Consultation
-                        </Button>
-                      )}
-
-                      {ticket.status === 'In Progress' && (
-                        <Button 
-                          size="sm" 
-                          onClick={() => onUpdateTicketStatus(ticket.id, 'Completed')} 
-                          className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 text-xs"
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" /> Mark Completed
-                        </Button>
-                      )}
-                    </div>
+              <div className="space-y-4 pt-2">
+                {selectedTicket.notes && (
+                  <div className="p-3.5 rounded-xl bg-neutral-50 border border-neutral-200 text-xs text-neutral-700">
+                    {selectedTicket.notes}
                   </div>
-                ))
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                )}
 
-        {/* Issue Ticket Form */}
-        <div className="lg:col-span-4 space-y-4">
-          <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
-            <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
-              <CardTitle className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                <Plus className="w-4 h-4 text-indigo-600" /> Issue Queue Ticket
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-4 space-y-3 text-xs">
-              <form onSubmit={handleIssueNewTicket} className="space-y-3">
-                <div>
-                  <label className="font-medium text-slate-700 dark:text-slate-300 block mb-1">Select Patient</label>
-                  <select 
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs"
-                    value={selectedPatientId}
-                    onChange={(e) => setSelectedPatientId(e.target.value)}
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() => {
+                      onUpdateTicketStatus(selectedTicket.id, 'In Progress');
+                      toast.success(`Called ${selectedTicket.patientName} (${selectedTicket.ticketNumber})`);
+                      setSelectedTicket({ ...selectedTicket, status: 'In Progress' });
+                    }}
+                    className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
                   >
-                    {patients.map(p => (
-                      <option key={p.id} value={p.id}>{p.fullName} ({p.mrn})</option>
-                    ))}
-                  </select>
+                    Call Patient
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      onUpdateTicketStatus(selectedTicket.id, 'Completed');
+                      toast.success(`Completed ticket ${selectedTicket.ticketNumber}`);
+                      setSelectedTicket(null);
+                    }}
+                    className="rounded-xl border-neutral-200 text-xs font-semibold"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                    Mark Completed
+                  </Button>
                 </div>
 
-                <div>
-                  <label className="font-medium text-slate-700 dark:text-slate-300 block mb-1">Department Queue</label>
-                  <select 
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs"
-                    value={selectedDept}
-                    onChange={(e) => setSelectedDept(e.target.value)}
-                  >
-                    {DEPARTMENTS.map(d => (
-                      <option key={d} value={d}>{d}</option>
-                    ))}
-                  </select>
+                <div className="border-t border-neutral-100 pt-4 space-y-2.5">
+                  <div className="text-xs font-bold text-neutral-700">Transfer to Another Department (Loud Alert)</div>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={transferTarget}
+                      onChange={(e) => setTransferTarget(e.target.value as any)}
+                      className="flex-1 h-10 px-3 rounded-xl border border-neutral-200 text-xs font-semibold bg-white"
+                    >
+                      {ALL_DEPARTMENTS.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+                    <Button
+                      onClick={handleTransferTicket}
+                      className="h-10 px-4 rounded-xl bg-neutral-950 hover:bg-blue-600 text-white text-xs font-semibold"
+                    >
+                      <BellRing className="w-3.5 h-3.5 mr-1.5" />
+                      Transfer
+                    </Button>
+                  </div>
                 </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
-                <div>
-                  <label className="font-medium text-slate-700 dark:text-slate-300 block mb-1">Priority Level</label>
-                  <select 
-                    className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs"
-                    value={priority}
-                    onChange={(e) => setPriority(e.target.value as any)}
-                  >
-                    <option value="Normal">Normal Queue</option>
-                    <option value="Urgent">Urgent Priority</option>
-                    <option value="Emergency">Emergency Triage (Immediate)</option>
-                  </select>
-                </div>
+      {/* Check-In Patient Modal */}
+      <Dialog open={isIssueOpen} onOpenChange={setIsIssueOpen}>
+        <DialogContent className="sm:max-w-md bg-white border border-neutral-200 rounded-2xl">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-neutral-950">Check In Patient to Queue</DialogTitle>
+            <DialogDescription className="text-xs text-neutral-500">
+              Distinguish Online Bookings from Walk-In clients and notify the target department.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleCreateTicket} className="space-y-4 pt-2">
+            <div>
+              <label className="block text-xs font-semibold text-neutral-700 mb-1">Client Type</label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setOrderSource('WALK_IN')}
+                  className={`h-10 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer ${
+                    orderSource === 'WALK_IN' ? 'bg-neutral-950 text-white border-neutral-950' : 'bg-white text-neutral-700 border-neutral-200'
+                  }`}
+                >
+                  <Footprints className="w-3.5 h-3.5" />
+                  Walk-In Client
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderSource('ONLINE')}
+                  className={`h-10 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 cursor-pointer ${
+                    orderSource === 'ONLINE' ? 'bg-blue-600 text-white border-blue-600' : 'bg-white text-neutral-700 border-neutral-200'
+                  }`}
+                >
+                  <Globe className="w-3.5 h-3.5" />
+                  Online Booking
+                </button>
+              </div>
+            </div>
 
-                <Button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold gap-2">
-                  Issue Queue Ticket
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            <div>
+              <label className="block text-xs font-semibold text-neutral-700 mb-1">Patient Full Name *</label>
+              <Input
+                value={patientName}
+                onChange={(e) => setPatientName(e.target.value)}
+                placeholder="e.g. Chinedu Okafor"
+                list="tekilab-queue-patients"
+                className="h-10 rounded-xl"
+                required
+              />
+              <datalist id="tekilab-queue-patients">
+                {patients.map((p) => (
+                  <option key={p.id} value={p.fullName} />
+                ))}
+              </datalist>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-700 mb-1">Target Department</label>
+              <select
+                value={department}
+                onChange={(e) => setDepartment(e.target.value as any)}
+                className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-xs font-semibold bg-white"
+              >
+                {ALL_DEPARTMENTS.map((d) => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-neutral-700 mb-1">Test / Visit Notes</label>
+              <Input
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="e.g. Malaria RDT + CBC Rapid"
+                className="h-10 rounded-xl"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsIssueOpen(false)} className="rounded-xl">
+                Cancel
+              </Button>
+              <Button type="submit" className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6">
+                Issue Ticket &amp; Notify
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

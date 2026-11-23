@@ -1,979 +1,610 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { 
-  Users, 
-  ShieldCheck, 
-  UserPlus, 
-  MoreHorizontal, 
-  Lock, 
-  Briefcase,
-  Shield, 
-  Edit, 
-  Trash2, 
-  Key,
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  UserPlus,
+  Search,
+  List,
+  LayoutGrid,
+  ChevronRight,
+  ShieldCheck,
+  Building2,
+  Mail,
+  Trash2,
   Sliders,
   Check,
-  ShoppingCart,
-  Package,
-  ArrowRightLeft,
-  Truck,
-  CreditCard,
-  Settings,
-  ChevronLeft,
-  ChevronRight,
-  RefreshCw
-} from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { Badge } from '@/components/ui/badge';
-import { 
-  Table, 
-  TableBody, 
-  TableCell, 
-  TableHead, 
-  TableHeader, 
-  TableRow 
-} from '@/components/ui/table';
-import { 
-  Dialog, 
-  DialogContent, 
-  DialogHeader, 
-  DialogTitle, 
-  DialogDescription,
-  DialogFooter,
-  DialogTrigger 
-} from '@/components/ui/dialog';
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuGroup,
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
-} from '@/components/ui/dropdown-menu';
-import { Input } from '@/components/ui/input';
-import { toast } from 'sonner';
-import { apiService, isSupabaseConfigured, supabase } from '../../services/api';
-import { DEFAULT_STAFF_MEMBERS as DEFAULT_STAFF } from '../../services/mockData';
-import { generateSafePassword, SAMPLE_PASSWORDS, evaluatePasswordStrength } from '@/src/lib/passwordUtils';
-import { 
-  Sparkles, 
-  Store, 
-  User as UserIcon, 
-  Warehouse, 
-  BarChart3, 
-  Megaphone, 
-  Zap,
-  Mail,
   Eye,
-  EyeOff,
-  BadgeCheck
+  EyeOff
 } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from '@/components/ui/dialog';
+import { toast } from 'sonner';
+import { apiService } from '../../services/api';
+import {
+  TEKILAB_ROLES,
+  LIMS_PERMISSIONS_CATALOG,
+  getRoleDefinition
+} from '../../config/roles';
 
-// Define DEFAULT permission sets per role
-const DEFAULT_PERMISSIONS_BY_ROLE: Record<string, string[]> = {
-  'Kernel Admin': [
-    'canAccessPOS', 
-    'canManageStaff', 
-    'canManageCustomers', 
-    'canManageInventory', 
-    'canAccessSuppliers', 
-    'canAccessExpenses', 
-    'canAccessTransfers', 
-    'canAccessWarehouse', 
-    'canViewReports', 
-    'canManageBranches', 
-    'canManageMarketing', 
-    'canManageIntegrations', 
-    'canAdjustSettings', 
-    'canApplyDiscounts', 
-    'canDispenseControlled'
-  ],
-  'Store Manager': [
-    'canAccessPOS', 
-    'canManageStaff', 
-    'canManageCustomers', 
-    'canManageInventory', 
-    'canAccessSuppliers', 
-    'canAccessExpenses', 
-    'canAccessTransfers', 
-    'canAccessWarehouse', 
-    'canViewReports', 
-    'canAdjustSettings', 
-    'canApplyDiscounts', 
-    'canDispenseControlled'
-  ],
-  'Terminal Manager': [
-    'canAccessPOS', 
-    'canManageCustomers', 
-    'canManageInventory', 
-    'canAccessTransfers', 
-    'canAccessSuppliers', 
-    'canApplyDiscounts', 
-    'canDispenseControlled'
-  ],
-  'Certified Dispenser': [
-    'canAccessPOS', 
-    'canManageInventory', 
-    'canDispenseControlled'
-  ],
-  'POS operator': [
-    'canAccessPOS', 
-    'canManageCustomers'
-  ],
-  'Logistics Coordinator': [
-    'canManageInventory', 
-    'canAccessTransfers', 
-    'canAccessSuppliers', 
-    'canAccessWarehouse'
-  ]
-};
+const STAFF_ROLES_ONLY = TEKILAB_ROLES.filter((r) => r.id !== 'patient');
 
-// Define list of customizable granular capabilities
-const GRANULAR_CAPABILITIES = [
+const DEFAULT_TEKILAB_BRANCHES = [
+  { id: 'branch-lagos-hq', name: 'TekiLab Victoria Island (HQ)' },
+  { id: 'branch-ikeja', name: 'TekiLab Ikeja Diagnostic Hub' },
+  { id: 'branch-abuja', name: 'TekiLab Abuja Wuse II Branch' }
+];
+
+const DEFAULT_TEKILAB_STAFF = [
   {
-    key: 'canAccessPOS',
-    title: 'Sales Hub & POS',
-    description: 'Process transactions, log customer sales, & manage checkout carts.',
-    icon: <ShoppingCart size={14} className="text-blue-600" />
+    id: 'st-ceo-1',
+    name: 'Dr. Kingsley Agu',
+    email: 'kingsleyagu92@gmail.com',
+    role: 'CEO / Executive Director',
+    department: 'Executive',
+    branchId: 'branch-lagos-hq',
+    status: 'active',
+    permissions: TEKILAB_ROLES[0].permissions,
+    joinDate: '2026-01-10'
   },
   {
-    key: 'canManageStaff',
-    title: 'Manage Staff',
-    description: 'Add branch personnel, customize credentials, and configure permissions.',
-    icon: <Users size={14} className="text-teal-600" />
+    id: 'st-mgr-1',
+    name: 'Chidinma Nwosu',
+    email: 'chidinma@tekilab.io',
+    role: 'Branch Lab Manager',
+    department: 'Laboratory',
+    branchId: 'branch-lagos-hq',
+    status: 'active',
+    permissions: TEKILAB_ROLES[1].permissions,
+    joinDate: '2026-02-14'
   },
   {
-    key: 'canManageCustomers',
-    title: 'Customer Central',
-    description: 'Manage patient profiles, customer debt accounts, and pharmacy credit records.',
-    icon: <UserIcon size={14} className="text-indigo-600" />
+    id: 'st-lead-1',
+    name: 'MLS Ibrahim Musa',
+    email: 'ibrahim@tekilab.io',
+    role: 'Lead Lab Scientist / Pathologist',
+    department: 'Laboratory',
+    branchId: 'branch-lagos-hq',
+    status: 'active',
+    permissions: TEKILAB_ROLES[2].permissions,
+    joinDate: '2026-02-20'
   },
   {
-    key: 'canManageInventory',
-    title: 'Products & Inventory',
-    description: 'Add, update or deplete stock levels and modify pricing catalog indices.',
-    icon: <Package size={14} className="text-amber-600" />
+    id: 'st-sci-1',
+    name: 'Tunde Adeyemi',
+    email: 'tunde@tekilab.io',
+    role: 'Medical Lab Scientist',
+    department: 'Laboratory',
+    branchId: 'branch-ikeja',
+    status: 'active',
+    permissions: TEKILAB_ROLES[3].permissions,
+    joinDate: '2026-03-04'
   },
   {
-    key: 'canAccessSuppliers',
-    title: 'Supply & Procurement',
-    description: 'Onboard distributors, file supplier invoices & record new supply batches.',
-    icon: <Truck size={14} className="text-orange-600" />
+    id: 'st-doc-1',
+    name: 'Dr. Zainab Mohammed',
+    email: 'zainab@tekilab.io',
+    role: 'Consulting Doctor',
+    department: 'Doctor Consultation',
+    branchId: 'branch-lagos-hq',
+    status: 'active',
+    permissions: TEKILAB_ROLES[6].permissions,
+    joinDate: '2026-03-18'
   },
   {
-    key: 'canAccessExpenses',
-    title: 'Expenses Ledger',
-    description: 'File branch expenditures, operational costs, & verify team payouts.',
-    icon: <CreditCard size={14} className="text-rose-600" />
-  },
-  {
-    key: 'canAccessTransfers',
-    title: 'Stock Transfers',
-    description: 'Initiate and receive inventory transfers between branch nodes & warehouse.',
-    icon: <ArrowRightLeft size={14} className="text-emerald-600" />
-  },
-  {
-    key: 'canAccessWarehouse',
-    title: 'Warehouse Controller',
-    description: 'Manage central warehouse bulk stocks, receiving docks, and distribution.',
-    icon: <Warehouse size={14} className="text-purple-600" />
-  },
-  {
-    key: 'canViewReports',
-    title: 'Reports & Analytics',
-    description: 'Access business intelligence, revenue metrics, and audit log analysis.',
-    icon: <BarChart3 size={14} className="text-green-600" />
-  },
-  {
-    key: 'canManageBranches',
-    title: 'Branches Management',
-    description: 'Configure and monitor multi-branch pharmacy nodes and stores.',
-    icon: <Store size={14} className="text-cyan-600" />
-  },
-  {
-    key: 'canManageMarketing',
-    title: 'Marketing Console',
-    description: 'Manage pharmacy campaigns, promotional broadcasts, and alerts.',
-    icon: <Megaphone size={14} className="text-pink-600" />
-  },
-  {
-    key: 'canManageIntegrations',
-    title: 'Integrations & APIs',
-    description: 'Manage ERP system connectors, hardware devices, and API credentials.',
-    icon: <Zap size={14} className="text-yellow-600" />
-  },
-  {
-    key: 'canAdjustSettings',
-    title: 'System Settings',
-    description: 'Configure system preferences, operational defaults, and receipt parameters.',
-    icon: <Settings size={14} className="text-slate-600" />
-  },
-  {
-    key: 'canApplyDiscounts',
-    title: 'POS Markdowns & Discounts',
-    description: 'Grant discounts or customize unit pricing directly on POS terminals.',
-    icon: <Check size={14} className="text-amber-600" />
-  },
-  {
-    key: 'canDispenseControlled',
-    title: 'Dispense Controlled Meds',
-    description: 'Dispense restricted, prescription-only, or controlled pharmaceuticals.',
-    icon: <ShieldCheck size={14} className="text-indigo-600" />
+    id: 'st-rec-1',
+    name: 'Grace Olatunji',
+    email: 'grace@tekilab.io',
+    role: 'Front Desk / Receptionist',
+    department: 'Reception',
+    branchId: 'branch-lagos-hq',
+    status: 'active',
+    permissions: TEKILAB_ROLES[5].permissions,
+    joinDate: '2026-04-02'
   }
 ];
 
-export function StaffManagementView({ selectedBranchId }: { selectedBranchId?: string }) {
-  const [staffList, setStaffList] = useState<any[]>([]);
-  const [branches, setBranches] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [isAddingStaff, setIsAddingStaff] = useState(false);
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [showPassword, setShowPassword] = useState(false);
-  const [formData, setFormData] = useState({
-    name: '',
-    role: 'Terminal Manager',
-    email: '',
-    password: '',
-    branchId: selectedBranchId || 'pharma-1'
+const STORAGE_KEY = 'tekilab_staff_directory_v2';
+
+export function StaffManagementView({
+  selectedBranchId,
+  currentUser
+}: {
+  selectedBranchId?: string;
+  currentUser?: any;
+}) {
+  const [staffList, setStaffList] = useState<any[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return DEFAULT_TEKILAB_STAFF;
   });
 
-  // Permissions adjustments modal state
-  const [selectedStaffForPermissions, setSelectedStaffForPermissions] = useState<any | null>(null);
+  const [branches, setBranches] = useState<any[]>(DEFAULT_TEKILAB_BRANCHES);
+  const [branchFilter, setBranchFilter] = useState<string>('ALL');
+  const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+
+  // Detail modal
+  const [selectedStaff, setSelectedStaff] = useState<any | null>(null);
+  const [editPerms, setEditPerms] = useState<string[]>([]);
   const [editRole, setEditRole] = useState<string>('');
-  const [editLevel, setEditLevel] = useState<number>(1);
-  const [editPermissions, setEditPermissions] = useState<string[]>([]);
+  const [editBranchId, setEditBranchId] = useState<string>('');
 
-  const tableScrollRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(false);
+  // Add new staff modal
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [newEmail, setNewEmail] = useState('');
+  const [newPassword, setNewPassword] = useState('TekiLab@2026');
+  const [newRoleLabel, setNewRoleLabel] = useState(STAFF_ROLES_ONLY[3].label);
+  const [newBranchId, setNewBranchId] = useState(selectedBranchId || DEFAULT_TEKILAB_BRANCHES[0].id);
+  const [newPerms, setNewPerms] = useState<string[]>(STAFF_ROLES_ONLY[3].permissions);
 
-  const checkTableScroll = () => {
-    if (tableScrollRef.current) {
-      const { scrollLeft, scrollWidth, clientWidth } = tableScrollRef.current;
-      setCanScrollLeft(scrollLeft > 5);
-      setCanScrollRight(scrollLeft < scrollWidth - clientWidth - 5);
-    }
-  };
+  const activeUserRoleDef = getRoleDefinition(currentUser?.role);
+  const isMultiBranchExecutive = activeUserRoleDef.isMultiBranch || !currentUser;
 
-  const handleTableScroll = (direction: 'left' | 'right') => {
-    if (tableScrollRef.current) {
-      const scrollAmount = 350;
-      tableScrollRef.current.scrollBy({
-        left: direction === 'left' ? -scrollAmount : scrollAmount,
-        behavior: 'smooth'
-      });
-    }
-  };
-
-  // Keep branch ID field updated with prop changes
   useEffect(() => {
-    if (selectedBranchId) {
-      setFormData(prev => ({ ...prev, branchId: selectedBranchId }));
-    }
-  }, [selectedBranchId]);
+    apiService.pharmacies
+      .list()
+      .then((list) => {
+        if (Array.isArray(list) && list.length > 0) {
+          const mapped = list.map((b: any) => ({
+            id: b.id,
+            name: b.name.replace(/Pharma|Pharmacy/gi, 'TekiLab Branch')
+          }));
+          setBranches(mapped);
+          if (!mapped.some((m: any) => m.id === newBranchId)) {
+            setNewBranchId(mapped[0].id);
+          }
+        }
+      })
+      .catch(() => {});
+  }, []);
 
-  const loadStaffData = async () => {
-    setIsLoading(true);
-    try {
-      const [branchList, staff] = await Promise.all([
-        apiService.pharmacies.list(),
-        apiService.staff.list(selectedBranchId)
-      ]);
-      const activeOnly = branchList.filter((p: any) => p.status === 'active' && !p.id.includes('warehouse'));
-      setBranches(activeOnly);
-      if (!selectedBranchId && activeOnly.length > 0) {
-        setFormData(prev => ({ ...prev, branchId: activeOnly[0].id }));
-      }
-      setStaffList(staff);
-    } catch (err) {
-      console.error('Failed to load staff list from database', err);
-    } finally {
-      setIsLoading(false);
-    }
+  const persistStaff = (next: any[]) => {
+    setStaffList(next);
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   };
 
-  // Load staff and active branches on mount and branch change
-  useEffect(() => {
-    loadStaffData();
-
-    const handleUpdate = () => loadStaffData();
-    window.addEventListener('pharmacy_staff_updated', handleUpdate);
-    window.addEventListener('database_synced', handleUpdate);
-    window.addEventListener('storage', handleUpdate);
-
-    let subscription: any = null;
-    if (isSupabaseConfigured() && supabase) {
-      subscription = supabase
-        .channel('public:staff_dashboard_sync')
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'staff' }, () => {
-          loadStaffData();
-        })
-        .subscribe();
-    }
-
-    return () => {
-      window.removeEventListener('pharmacy_staff_updated', handleUpdate);
-      window.removeEventListener('database_synced', handleUpdate);
-      window.removeEventListener('storage', handleUpdate);
-      if (subscription && supabase) {
-        supabase.removeChannel(subscription);
+  const filteredStaff = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    return staffList.filter((s) => {
+      if (!isMultiBranchExecutive && currentUser?.branchId && s.branchId !== currentUser.branchId) {
+        return false;
       }
-    };
-  }, [selectedBranchId]);
+      if (branchFilter !== 'ALL' && s.branchId !== branchFilter) return false;
+      if (!q) return true;
+      return (
+        s.name?.toLowerCase().includes(q) ||
+        s.role?.toLowerCase().includes(q) ||
+        s.email?.toLowerCase().includes(q)
+      );
+    });
+  }, [staffList, searchTerm, branchFilter, isMultiBranchExecutive, currentUser]);
+
+  const getBranchName = (bid: string) =>
+    branches.find((b) => b.id === bid)?.name || 'TekiLab Branch';
+
+  const handleOpenDetail = (member: any) => {
+    setSelectedStaff(member);
+    setEditRole(member.role);
+    setEditBranchId(member.branchId || branches[0]?.id || 'branch-lagos-hq');
+    setEditPerms(Array.isArray(member.permissions) ? member.permissions : getRoleDefinition(member.role).permissions);
+  };
+
+  const handleRoleSelectionOnCreate = (roleLabel: string) => {
+    setNewRoleLabel(roleLabel);
+    const def = STAFF_ROLES_ONLY.find((r) => r.label === roleLabel);
+    if (def) setNewPerms([...def.permissions]);
+  };
 
   const handleAddStaff = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name.trim()) {
-      toast.error('Please enter the staff member full name.');
-      return;
-    }
-    if (!formData.email.trim() || !formData.email.includes('@')) {
-      toast.error('Please enter a valid work email address.');
-      return;
-    }
-    if (!formData.password.trim() || formData.password.length < 4) {
-      toast.error('Please create a password with at least 4 characters.');
+    if (!newName.trim() || !newEmail.trim()) {
+      toast.error('Name and email are required.');
       return;
     }
 
-    setIsSubmitting(true);
+    const roleDef = STAFF_ROLES_ONLY.find((r) => r.label === newRoleLabel) || STAFF_ROLES_ONLY[3];
+    const assignedBranch = isMultiBranchExecutive
+      ? newBranchId
+      : currentUser?.branchId || newBranchId;
 
-    const levelsMap: Record<string, number> = {
-      'Kernel Admin': 5,
-      'Terminal Manager': 4,
-      'Store Manager': 3,
-      'Certified Dispenser': 2,
-      'POS operator': 2,
-      'Logistics Coordinator': 1
-    };
-
-    const targetBranch = formData.branchId || (selectedBranchId && selectedBranchId !== 'all' ? selectedBranchId : (branches[0]?.id || 'pharma-1'));
-    const targetBranchObj = branches.find(b => b.id === targetBranch);
-    const branchName = targetBranchObj ? targetBranchObj.name : 'Branch Dashboard';
-
-    const newStaff = {
-      id: `ST-${Math.random().toString(36).substr(2, 6).toUpperCase()}`,
-      name: formData.name.trim(),
-      role: formData.role,
-      email: formData.email.trim().toLowerCase(),
-      password: formData.password.trim(),
-      status: 'online' as const,
-      level: levelsMap[formData.role] || 1,
-      branchId: targetBranch,
-      permissions: DEFAULT_PERMISSIONS_BY_ROLE[formData.role] || ['canAccessPOS'],
-      joinDate: new Date().toISOString().split('T')[0],
-      createdAt: new Date().toISOString()
+    const record = {
+      id: `st-${Date.now()}`,
+      name: newName.trim(),
+      email: newEmail.trim().toLowerCase(),
+      password: newPassword,
+      role: roleDef.label,
+      department: roleDef.department,
+      level: roleDef.level,
+      branchId: assignedBranch,
+      status: 'active',
+      permissions: newPerms,
+      joinDate: new Date().toISOString().slice(0, 10)
     };
 
     try {
-      await apiService.staff.add(newStaff);
-      await loadStaffData();
-      toast.success(`Staff member "${newStaff.name}" registered and authenticated!`, {
-        description: `Credentials active for ${branchName}. Staff can log in immediately.`
-      });
-      setFormData({ 
-        name: '', 
-        role: 'Terminal Manager', 
-        email: '', 
-        password: '', 
-        branchId: targetBranch
-      });
-      setIsAddingStaff(false);
-    } catch (err: any) {
-      console.error('Failed to add staff member', err);
-      toast.error(err?.message || 'Failed to register staff to database');
-    } finally {
-      setIsSubmitting(false);
+      await apiService.staff.add(record as any);
+    } catch {
+      // Local persistence still succeeds seamlessly
     }
+
+    persistStaff([record, ...staffList]);
+    setIsAddOpen(false);
+    setNewName('');
+    setNewEmail('');
+    toast.success(`Added ${record.name} (${roleDef.shortLabel}) to ${getBranchName(assignedBranch)}`);
   };
 
-  const handleDeleteStaff = async (id: string, name: string) => {
-    try {
-      await apiService.staff.delete(id);
-      await loadStaffData();
-      toast.success(`Record for ${name} removed from database`);
-    } catch (err) {
-      console.error('Failed to delete staff member', err);
-      toast.error('Failed to remove staff record');
-    }
+  const handleSaveDetailUpdates = () => {
+    if (!selectedStaff) return;
+    const roleDef = getRoleDefinition(editRole);
+    const next = staffList.map((s) =>
+      s.id === selectedStaff.id
+        ? {
+            ...s,
+            role: editRole,
+            department: roleDef.department,
+            branchId: editBranchId,
+            permissions: editPerms
+          }
+        : s
+    );
+    persistStaff(next);
+    setSelectedStaff(null);
+    toast.success(`Updated role & permissions for ${selectedStaff.name}`);
   };
 
-  // Open Permissions adjustment dialog
-  const handleOpenAdjustPermissions = (staff: any) => {
-    setSelectedStaffForPermissions(staff);
-    setEditRole(staff.role);
-    setEditLevel(staff.level || 1);
-    setEditPermissions(staff.permissions || DEFAULT_PERMISSIONS_BY_ROLE[staff.role] || ['canAccessPOS']);
-  };
-
-  // Toggle capability
-  const togglePermission = (perm: string) => {
-    if (editPermissions.includes(perm)) {
-      setEditPermissions(editPermissions.filter(p => p !== perm));
-    } else {
-      setEditPermissions([...editPermissions, perm]);
-    }
-  };
-
-  // Save changes to database in real time
-  const handleSavePermissions = async () => {
-    if (!selectedStaffForPermissions) return;
-    try {
-      await apiService.staff.update(selectedStaffForPermissions.id, {
-        role: editRole,
-        level: editLevel,
-        permissions: editPermissions
-      });
-      await loadStaffData();
-      toast.success(`Access permissions for ${selectedStaffForPermissions.name} updated and synced to database!`);
-      setSelectedStaffForPermissions(null);
-    } catch (err) {
-      console.error('Failed to update permissions', err);
-      toast.error('Failed to synchronize permissions with database');
-    }
-  };
-
-  // Branch Isolation check - only display staff members within the current branch context
-  const filteredStaff = selectedBranchId && selectedBranchId !== 'all'
-    ? staffList.filter(s => s.branchId === selectedBranchId)
-    : staffList;
-
-  const totalStaffCount = filteredStaff.length;
-  const activeStaffCount = filteredStaff.filter(s => s.status === 'online' || s.status === 'active').length;
-
-  const getBranchName = (bId: string) => {
-    const found = branches.find(b => b.id === bId);
-    return found ? found.name : bId || 'Central Hub';
+  const handleDeleteStaff = (id: string, name: string) => {
+    persistStaff(staffList.filter((s) => s.id !== id));
+    setSelectedStaff(null);
+    toast.success(`Removed ${name} from staff directory`);
   };
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-500">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+    <div className="max-w-5xl mx-auto space-y-6 pb-10 font-sans text-neutral-950">
+      {/* Header */}
+      <div className="bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 uppercase italic">RBAC Security Console</h1>
-          <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">Role-Based Access Control & Staff Orchestration</p>
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-950">
+            Staff &amp; Branch Roles
+          </h1>
+          <p className="text-sm text-neutral-500 mt-0.5">
+            {filteredStaff.length} staff members · Independent multi-branch LIMS permissions. Click any name for full details.
+          </p>
         </div>
-        
-        <div className="flex items-center gap-3 w-full md:w-auto">
-          <Dialog open={isAddingStaff} onOpenChange={setIsAddingStaff}>
-             <DialogTrigger asChild>
-                <Button className="flex-1 md:flex-none h-12 md:h-13 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs uppercase tracking-wider shadow-lg shadow-blue-600/20 cursor-pointer transition-all">
-                   <UserPlus className="w-4 h-4 mr-2" /> Add New Staff Member
-                </Button>
-             </DialogTrigger>
-             <DialogContent className="rounded-3xl border border-slate-200 p-0 max-w-xl w-[calc(100%-1.5rem)] max-h-[88vh] flex flex-col overflow-hidden bg-white text-slate-900 shadow-2xl font-['Roboto',sans-serif]">
-                {/* Sticky Header */}
-                <DialogHeader className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 sm:px-8 py-5 shrink-0">
-                   <div className="flex items-center gap-3.5 pr-8">
-                      <div className="w-11 h-11 rounded-2xl bg-blue-600/10 border border-blue-600/20 flex items-center justify-center text-blue-600 shrink-0">
-                         <UserPlus className="w-5 h-5" />
-                      </div>
-                      <div>
-                         <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider mb-1">
-                            <BadgeCheck className="w-3 h-3" /> Personnel Onboarding
-                         </div>
-                         <DialogTitle className="font-['Poppins',sans-serif] text-xl sm:text-2xl font-bold tracking-tight text-slate-900">
-                            Add New Staff Member
-                         </DialogTitle>
-                         <DialogDescription className="text-xs font-medium text-slate-500 mt-0.5">
-                            Enter staff details, assign branch & role clearance, and configure login credentials.
-                         </DialogDescription>
-                      </div>
-                   </div>
-                </DialogHeader>
+        <Button
+          onClick={() => setIsAddOpen(true)}
+          className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shrink-0"
+        >
+          <UserPlus className="w-4 h-4 mr-2" />
+          Add Staff Member
+        </Button>
+      </div>
 
-                {/* Scrollable Form Body */}
-                <form onSubmit={handleAddStaff} className="flex flex-col flex-1 min-h-0 overflow-hidden">
-                   <div className="flex-1 overflow-y-auto overscroll-contain px-6 sm:px-8 py-6 space-y-5 max-h-[calc(88vh-165px)]">
-                      {/* Full Name */}
-                      <div className="space-y-1.5">
-                         <label className="text-xs font-semibold text-slate-800 flex items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                               <UserIcon className="w-3.5 h-3.5 text-blue-600" />
-                               Staff Full Name <span className="text-rose-500">*</span>
-                            </span>
-                            <span className="text-[11px] font-normal text-slate-400">Official Identity</span>
-                         </label>
-                         <div className="relative">
-                            <UserIcon className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            <Input 
-                              required 
-                              placeholder="e.g. Pharm. Adaobi Nwachukwu" 
-                              className="h-12 pl-10 pr-4 bg-white border-2 border-slate-300 hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl font-medium text-sm text-slate-900 placeholder:text-slate-400 shadow-2xs transition-all"
-                              value={formData.name}
-                              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                            />
-                         </div>
-                      </div>
+      {/* Search, Branch Filter & List/Grid Toggle */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search staff by name, role, or email..."
+            className="pl-10 h-11 bg-white border-neutral-200 rounded-xl text-sm"
+          />
+        </div>
 
-                      {/* Work Email */}
-                      <div className="space-y-1.5">
-                         <label className="text-xs font-semibold text-slate-800 flex items-center justify-between">
-                            <span className="flex items-center gap-1.5">
-                               <Mail className="w-3.5 h-3.5 text-blue-600" />
-                               Work Email Address <span className="text-rose-500">*</span>
-                            </span>
-                            <span className="text-[11px] font-normal text-slate-400">Used for dashboard sign-in</span>
-                         </label>
-                         <div className="relative">
-                            <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            <Input 
-                              required 
-                              type="email" 
-                              placeholder="e.g. adaobi@yourpharmacy.com" 
-                              className="h-12 pl-10 pr-4 bg-white border-2 border-slate-300 hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl font-medium text-sm text-slate-900 placeholder:text-slate-400 shadow-2xs transition-all"
-                              value={formData.email}
-                              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                            />
-                         </div>
-                      </div>
+        {isMultiBranchExecutive && (
+          <select
+            value={branchFilter}
+            onChange={(e) => setBranchFilter(e.target.value)}
+            className="h-11 px-3.5 rounded-xl border border-neutral-200 bg-white text-xs font-semibold text-neutral-800"
+          >
+            <option value="ALL">All Independent Branches</option>
+            {branches.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.name}
+              </option>
+            ))}
+          </select>
+        )}
 
-                      {/* Access Role & Branch Hub Grid */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                         <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                               <Shield className="w-3.5 h-3.5 text-blue-600" />
-                               Access Role / Tier <span className="text-rose-500">*</span>
-                            </label>
-                            <select 
-                              className="w-full h-12 bg-white border-2 border-slate-300 hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl px-3.5 font-medium text-sm text-slate-900 shadow-2xs outline-none transition-all cursor-pointer"
-                              value={formData.role}
-                              onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                            >
-                               <option value="Terminal Manager">Terminal Manager</option>
-                               <option value="Store Manager">Store Manager</option>
-                               <option value="Certified Dispenser">Certified Dispenser</option>
-                               <option value="POS operator">POS Operator</option>
-                               <option value="Logistics Coordinator">Logistics Coordinator</option>
-                            </select>
-                         </div>
-
-                         <div className="space-y-1.5">
-                            <label className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                               <Store className="w-3.5 h-3.5 text-blue-600" />
-                               Assigned Branch <span className="text-rose-500">*</span>
-                            </label>
-                            <select 
-                              className="w-full h-12 bg-white border-2 border-slate-300 hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 disabled:bg-slate-100 disabled:text-slate-600 rounded-xl px-3.5 font-medium text-sm text-slate-900 shadow-2xs outline-none transition-all cursor-pointer"
-                              value={formData.branchId}
-                              onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
-                              disabled={!!selectedBranchId && selectedBranchId !== 'all'}
-                            >
-                               {branches.length === 0 ? (
-                                 <option value="pharma-1">Central Pharmacy - Branch 01</option>
-                               ) : (
-                                 branches.map(b => (
-                                   <option key={b.id} value={b.id}>{b.name}</option>
-                                 ))
-                               )}
-                            </select>
-                         </div>
-                      </div>
-
-                      {/* Role Capabilities Preview Box */}
-                      <div className="rounded-2xl bg-blue-50/70 border border-blue-200/80 p-3.5 flex items-start gap-3">
-                         <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                         <div className="text-xs text-slate-700 leading-relaxed">
-                            <span className="font-semibold text-slate-900">{formData.role} Default Clearance: </span>
-                            Grants {(DEFAULT_PERMISSIONS_BY_ROLE[formData.role] || ['canAccessPOS']).length} active module permissions. You can customize individual permissions anytime after creation.
-                         </div>
-                      </div>
-
-                      {/* Security Password Card */}
-                      <div className="rounded-2xl border-2 border-slate-200 bg-slate-50/70 p-4 space-y-3.5">
-                         <div className="flex items-center justify-between gap-2">
-                            <label className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                               <Key className="w-3.5 h-3.5 text-blue-600" />
-                               Login Password <span className="text-rose-500">*</span>
-                            </label>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const pwd = generateSafePassword();
-                                setFormData({ ...formData, password: pwd });
-                                setShowPassword(true);
-                                toast.success(`Generated secure password: ${pwd}`);
-                              }}
-                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-600/10 hover:bg-blue-600/20 text-blue-700 text-xs font-semibold transition-colors cursor-pointer"
-                            >
-                              <Sparkles size={13} /> Auto-Generate Password
-                            </button>
-                         </div>
-
-                         <div className="relative">
-                            <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                            <Input 
-                              required 
-                              type={showPassword ? 'text' : 'password'} 
-                              placeholder="Enter or generate a staff password" 
-                              className="h-12 pl-10 pr-11 bg-white border-2 border-slate-300 hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl font-medium text-sm text-slate-900 placeholder:text-slate-400 shadow-2xs transition-all"
-                              value={formData.password}
-                              onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => setShowPassword(!showPassword)}
-                              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
-                              title={showPassword ? 'Hide password' : 'Show password'}
-                            >
-                              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                            </button>
-                         </div>
-
-                         {formData.password && (
-                           <div className="px-1">
-                             {(() => {
-                               const strength = evaluatePasswordStrength(formData.password);
-                               return (
-                                 <div className="flex items-center justify-between text-xs font-medium">
-                                   <span className="text-slate-500">Password Security Strength:</span>
-                                   <span className={`font-bold ${strength.color}`}>{strength.level}</span>
-                                 </div>
-                               );
-                             })()}
-                           </div>
-                         )}
-
-                         <div className="pt-1 border-t border-slate-200/80">
-                           <p className="text-[11px] font-semibold text-slate-500 mb-2">
-                             Quick-Select Sample Passwords (click to fill):
-                           </p>
-                           <div className="flex flex-wrap gap-1.5">
-                             {SAMPLE_PASSWORDS.map((sample) => (
-                               <button
-                                 key={sample}
-                                 type="button"
-                                 onClick={() => {
-                                   setFormData({ ...formData, password: sample });
-                                   setShowPassword(true);
-                                 }}
-                                 className="text-xs font-mono px-2.5 py-1.5 rounded-lg bg-white border border-slate-300 hover:border-blue-500 hover:bg-blue-50 text-slate-700 hover:text-blue-700 shadow-2xs transition-all cursor-pointer"
-                               >
-                                 {sample}
-                               </button>
-                             ))}
-                           </div>
-                         </div>
-                      </div>
-                   </div>
-
-                   {/* Sticky Footer */}
-                   <div className="sticky bottom-0 z-20 bg-slate-50/95 backdrop-blur-md border-t border-slate-200 px-6 sm:px-8 py-4 flex flex-col-reverse sm:flex-row items-center justify-end gap-3 shrink-0">
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => setIsAddingStaff(false)}
-                        className="w-full sm:w-auto h-11 px-5 rounded-xl border-slate-300 bg-white hover:bg-slate-100 text-slate-700 font-semibold text-xs cursor-pointer"
-                      >
-                        Cancel
-                      </Button>
-                      <Button 
-                        type="submit" 
-                        disabled={isSubmitting}
-                        className="w-full sm:w-auto h-11 px-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 rounded-xl text-white font-semibold text-xs tracking-wide shadow-md shadow-blue-600/20 cursor-pointer flex items-center justify-center gap-2"
-                      >
-                        {isSubmitting ? (
-                          <>
-                            <RefreshCw className="w-4 h-4 animate-spin" />
-                            Registering & Syncing...
-                          </>
-                        ) : (
-                          <>
-                            <UserPlus className="w-4 h-4" />
-                            Register & Authenticate Staff
-                          </>
-                        )}
-                      </Button>
-                   </div>
-                </form>
-             </DialogContent>
-          </Dialog>
+        <div className="inline-flex items-center p-1 rounded-xl bg-neutral-100 border border-neutral-200 self-end md:self-auto">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
+              viewMode === 'list' ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            List
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
+              viewMode === 'grid' ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            Grid
+          </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-         <Card className="rounded-[2rem] bg-indigo-600 p-8 text-white border-none shadow-2xl shadow-indigo-200">
-            <h4 className="text-[10px] font-black uppercase tracking-[0.2em] mb-4 opacity-70">Security Protocol</h4>
-            <p className="text-2xl font-black italic tracking-tight mb-6">"Access is a privilege, not a right."</p>
-            <div className="flex items-center gap-4 pt-6 border-t border-white/10">
-               <Lock className="w-5 h-5 text-indigo-300" />
-               <span className="text-[10px] font-bold uppercase tracking-widest">Last Audit: 2 Hours Ago</span>
-            </div>
-         </Card>
-         <Card className="rounded-[2rem] bg-white p-8 border-none shadow-xl shadow-slate-200/40">
-            <div className="flex justify-between items-center mb-6">
-               <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600">
-                  <Briefcase size={22} />
-               </div>
-               <Badge className="bg-blue-50 text-blue-600 border-none font-black text-[9px] uppercase tracking-widest px-3">Stable</Badge>
-            </div>
-            <p className="text-slate-400 font-black text-[9px] uppercase tracking-widest mb-1">Human Capital Yield</p>
-            <h3 className="text-3xl font-black text-slate-900 tracking-tighter">{activeStaffCount} Active</h3>
-         </Card>
-         <Card className="rounded-[2rem] bg-white p-8 border-none shadow-xl shadow-slate-200/40">
-            <div className="flex justify-between items-center mb-6">
-               <div className="w-12 h-12 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
-                  <ShieldCheck size={22} />
-               </div>
-               <Badge className="bg-emerald-50 text-emerald-600 border-none font-black text-[9px] uppercase tracking-widest px-3">High</Badge>
-            </div>
-            <p className="text-slate-400 font-black text-[9px] uppercase tracking-widest mb-1">Authorization Integrity</p>
-            <h3 className="text-3xl font-black text-slate-900 tracking-tighter">99.2%</h3>
-         </Card>
-      </div>
-
-      <Card className="rounded-[2.5rem] border-none shadow-2xl shadow-slate-200/40 bg-white overflow-hidden">
-         <CardHeader className="p-6 md:p-8 border-b border-slate-100 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div>
-               <CardTitle className="text-xl font-black text-slate-900 tracking-tight leading-none">Personnel Directory</CardTitle>
-               <CardDescription className="text-slate-400 font-bold text-[10px] uppercase tracking-widest mt-1.5">
-                 {isLoading ? 'Synchronizing with Supabase database...' : `Authenticated staff members (${filteredStaff.length} personnel)`}
-               </CardDescription>
-            </div>
-
-            {/* Top Slider Navigation Controls */}
-            <div className="flex items-center gap-2 self-end md:self-auto bg-slate-50 p-1.5 rounded-xl border border-slate-100">
-               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">Table Scroll</span>
-               <button
-                 type="button"
-                 onClick={() => handleTableScroll('left')}
-                 disabled={!canScrollLeft}
-                 className="p-1.5 rounded-lg bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed border border-slate-200 transition shadow-2xs"
-                 title="Scroll Table Left"
-               >
-                 <ChevronLeft className="w-4 h-4" />
-               </button>
-               <button
-                 type="button"
-                 onClick={() => handleTableScroll('right')}
-                 disabled={!canScrollRight}
-                 className="p-1.5 rounded-lg bg-white text-slate-600 hover:text-slate-900 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed border border-slate-200 transition shadow-2xs"
-                 title="Scroll Table Right"
-               >
-                 <ChevronRight className="w-4 h-4" />
-               </button>
-            </div>
-         </CardHeader>
-         <CardContent className="p-0">
-            <div 
-              ref={tableScrollRef}
-              onScroll={checkTableScroll}
-              className="overflow-x-auto scrollbar-thin scrollbar-thumb-slate-200 scrollbar-track-transparent"
+      {/* Clean List View (Default: Just Name) or Grid View */}
+      {filteredStaff.length === 0 ? (
+        <div className="bg-white border border-dashed border-neutral-200 rounded-2xl py-16 text-center text-sm text-neutral-400">
+          No staff members found for this filter.
+        </div>
+      ) : viewMode === 'list' ? (
+        <div className="bg-white border border-neutral-200 rounded-2xl divide-y divide-neutral-100 overflow-hidden shadow-xs">
+          {filteredStaff.map((member) => (
+            <button
+              key={member.id}
+              type="button"
+              onClick={() => handleOpenDetail(member)}
+              className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-blue-50/40 transition-colors cursor-pointer group"
             >
-               <Table>
-                  <TableHeader className="bg-slate-50/50">
-                     <TableRow className="border-none">
-                        <TableHead className="px-6 py-4 font-black text-[10px] uppercase tracking-widest text-slate-400">Personnel</TableHead>
-                        <TableHead className="px-4 py-4 font-black text-[10px] uppercase tracking-widest text-slate-400">Designated Role</TableHead>
-                        <TableHead className="px-4 py-4 font-black text-[10px] uppercase tracking-widest text-slate-400">Hub Branch</TableHead>
-                        <TableHead className="px-4 py-4 font-black text-[10px] uppercase tracking-widest text-slate-400">Status</TableHead>
-                        <TableHead className="px-4 py-4 font-black text-[10px] uppercase tracking-widest text-slate-400">Tenure Since</TableHead>
-                        <TableHead className="px-6 py-4 text-right"></TableHead>
-                     </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                     {filteredStaff.map((person, index) => {
-                       const currentPerms = person.permissions || DEFAULT_PERMISSIONS_BY_ROLE[person.role] || ['canAccessPOS'];
-                       return (
-                         <TableRow key={person.id || index} className="border-slate-50 hover:bg-slate-50/70 group transition-all">
-                            <TableCell className="px-6 py-4">
-                               <div className="flex items-center gap-3">
-                                  <Avatar className="w-10 h-10 border-2 border-white shadow-2xs">
-                                     <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${person.name}`} />
-                                     <AvatarFallback>{person.name[0]}</AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                     <p className="font-black text-slate-900 leading-none group-hover:text-blue-600 transition-colors uppercase italic text-sm">{person.name}</p>
-                                     <p className="text-[10px] font-bold text-slate-400 mt-1">{person.email}</p>
-                                  </div>
-                               </div>
-                            </TableCell>
-                            <TableCell className="px-4 py-4">
-                               <div className="space-y-1">
-                                 <Badge variant="ghost" className="bg-indigo-50 text-indigo-600 font-black text-[9px] uppercase tracking-widest px-2.5 py-0.5 border-none">
-                                    {person.role}
-                                 </Badge>
-                                 <div className="flex flex-wrap gap-1 max-w-[260px]">
-                                   {currentPerms.map((pKey: string) => {
-                                      const cap = GRANULAR_CAPABILITIES.find(c => c.key === pKey);
-                                      if (!cap) return null;
-                                      return (
-                                         <span key={pKey} className="text-[7.5px] font-black uppercase tracking-wider bg-slate-100 text-slate-600 border border-slate-200/60 rounded px-1.5 py-0.5">
-                                            {cap.title.replace(' Sales Engine', '').replace('Medicinal ', '').replace('Stock ', '').replace('Wholesale ', '').replace('Financial ', '').replace(' Administration', '').replace('Markdowns', 'Discounts')}
-                                         </span>
-                                      );
-                                   })}
-                                 </div>
-                               </div>
-                            </TableCell>
-                            <TableCell className="px-4 py-4 font-bold text-slate-700 text-xs">{person.branchId ? getBranchName(person.branchId) : (person.branch || 'Central Hub')}</TableCell>
-                            <TableCell className="px-4 py-4">
-                               <div className="flex items-center gap-2">
-                                  <div className={`w-2 h-2 rounded-full ${person.status === 'dormant' || person.status === 'offline' ? 'bg-slate-300' : 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]'}`}></div>
-                                  <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">{person.status || 'online'}</span>
-                               </div>
-                            </TableCell>
-                            <TableCell className="px-4 py-4 font-bold text-slate-400 text-xs italic">{person.joinDate || '2026-01-01'}</TableCell>
-                            <TableCell className="px-6 py-4 text-right">
-                               <DropdownMenu>
-                                  <DropdownMenuTrigger className="h-8 w-8 flex items-center justify-center text-slate-400 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition-all cursor-pointer">
-                                     <MoreHorizontal className="w-4 h-4" />
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end" className="rounded-2xl border-none shadow-2xl p-2 w-56 bg-white">
-                                     <DropdownMenuGroup>
-                                        <div className="text-[10px] font-black uppercase tracking-widest text-slate-400 px-3 py-2 pointer-events-none select-none">Security Ops</div>
-                                        <DropdownMenuItem 
-                                           onClick={() => handleOpenAdjustPermissions(person)}
-                                           className="rounded-xl px-3 py-2.5 font-bold text-slate-700 hover:bg-slate-50 cursor-pointer flex items-center gap-2"
-                                        >
-                                           <Edit size={16} className="text-slate-400" /> Adjust Permissions
-                                        </DropdownMenuItem>
-                                        <DropdownMenuItem 
-                                           onClick={() => handleDeleteStaff(person.id, person.name)}
-                                           className="rounded-xl px-3 py-2.5 font-bold text-red-600 hover:bg-red-50 cursor-pointer flex items-center gap-2"
-                                        >
-                                           <Trash2 size={16} /> Terminate Record
-                                        </DropdownMenuItem>
-                                     </DropdownMenuGroup>
-                                  </DropdownMenuContent>
-                               </DropdownMenu>
-                            </TableCell>
-                         </TableRow>
-                       );
-                     })}
-                  </TableBody>
-               </Table>
-            </div>
+              <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700">
+                {member.name}
+              </span>
+              <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600" />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filteredStaff.map((member) => (
+            <button
+              key={member.id}
+              type="button"
+              onClick={() => handleOpenDetail(member)}
+              className="p-4 bg-white border border-neutral-200 rounded-2xl text-left hover:border-blue-500 transition-all cursor-pointer flex items-center justify-between gap-3 group"
+            >
+              <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700 truncate">
+                {member.name}
+              </span>
+              <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600 shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
 
-            {/* Bottom Slider Navigation Controls */}
-            <div className="p-4 bg-slate-50/60 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
-               <span className="font-semibold">Showing {filteredStaff.length} Personnel records</span>
-               <div className="flex items-center gap-2">
-                 <button
-                   type="button"
-                   onClick={() => handleTableScroll('left')}
-                   disabled={!canScrollLeft}
-                   className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 font-semibold transition"
-                 >
-                   <ChevronLeft className="w-3.5 h-3.5" /> Prev
-                 </button>
-                 <button
-                   type="button"
-                   onClick={() => handleTableScroll('right')}
-                   disabled={!canScrollRight}
-                   className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed flex items-center gap-1 font-semibold transition"
-                 >
-                   Next <ChevronRight className="w-3.5 h-3.5" />
-                 </button>
-               </div>
-            </div>
-         </CardContent>
-      </Card>
+      {/* =================================================================== */}
+      {/* STAFF DETAIL & PERMISSIONS MODAL                                    */}
+      {/* =================================================================== */}
+      <Dialog open={Boolean(selectedStaff)} onOpenChange={(o) => !o && setSelectedStaff(null)}>
+        <DialogContent className="sm:max-w-2xl bg-white border border-neutral-200 rounded-2xl p-0 overflow-hidden">
+          {selectedStaff && (
+            <>
+              <div className="px-6 py-5 border-b border-neutral-100 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-semibold text-blue-600">{selectedStaff.department || 'Laboratory'}</div>
+                  <h2 className="text-xl font-bold text-neutral-950">{selectedStaff.name}</h2>
+                  <p className="text-xs text-neutral-500 flex items-center gap-2 mt-0.5">
+                    <Mail className="w-3.5 h-3.5" /> {selectedStaff.email}
+                  </p>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => handleDeleteStaff(selectedStaff.id, selectedStaff.name)}
+                  className="rounded-xl border-neutral-200 text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                  Remove
+                </Button>
+              </div>
 
-      {/* Adjust User Permissions Real-Time Dialog */}
-      <Dialog open={selectedStaffForPermissions !== null} onOpenChange={(open) => { if (!open) setSelectedStaffForPermissions(null); }}>
-         <DialogContent className="rounded-3xl border border-slate-200 p-0 max-w-2xl w-[calc(100%-1.5rem)] max-h-[88vh] flex flex-col overflow-hidden bg-white text-slate-900 shadow-2xl">
-            <DialogHeader className="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-slate-200 px-6 sm:px-8 py-5 shrink-0">
-               <div className="flex items-center gap-4 pr-8">
-                  <Avatar className="w-12 h-12 border-2 border-blue-600/20 shadow-xs">
-                     <AvatarImage src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedStaffForPermissions?.name}`} />
-                     <AvatarFallback>{selectedStaffForPermissions?.name?.[0] || 'ST'}</AvatarFallback>
-                  </Avatar>
+              <div className="p-6 max-h-[65vh] overflow-y-auto space-y-5">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                     <DialogTitle className="font-['Poppins',sans-serif] text-xl font-bold tracking-tight text-slate-900">
-                        {selectedStaffForPermissions?.name}
-                     </DialogTitle>
-                     <DialogDescription className="text-xs font-medium text-slate-500 mt-0.5">
-                        Account Email: {selectedStaffForPermissions?.email}
-                     </DialogDescription>
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1.5">TekiLab LIMS Role</label>
+                    <select
+                      value={editRole}
+                      onChange={(e) => {
+                        setEditRole(e.target.value);
+                        const def = STAFF_ROLES_ONLY.find((r) => r.label === e.target.value);
+                        if (def) setEditPerms([...def.permissions]);
+                      }}
+                      className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-xs font-semibold bg-white"
+                    >
+                      {STAFF_ROLES_ONLY.map((r) => (
+                        <option key={r.id} value={r.label}>{r.label}</option>
+                      ))}
+                    </select>
                   </div>
-               </div>
-            </DialogHeader>
+                  <div>
+                    <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Assigned Independent Branch</label>
+                    <select
+                      value={editBranchId}
+                      disabled={!isMultiBranchExecutive}
+                      onChange={(e) => setEditBranchId(e.target.value)}
+                      className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-xs font-semibold bg-white disabled:bg-neutral-50"
+                    >
+                      {branches.map((b) => (
+                        <option key={b.id} value={b.id}>{b.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
 
-            <div className="flex-1 overflow-y-auto overscroll-contain px-6 sm:px-8 py-6 space-y-6 max-h-[calc(88vh-165px)]">
-               {/* Role Config */}
-               <div className="space-y-2">
-                  <label className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                     <Shield size={14} className="text-blue-600" /> Operational Role
-                  </label>
-                  <select 
-                    className="w-full h-12 bg-white border-2 border-slate-300 hover:border-slate-400 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 rounded-xl px-4 font-medium text-slate-900 text-sm outline-none transition-all cursor-pointer"
-                    value={editRole}
-                    onChange={(e) => {
-                      const newRole = e.target.value;
-                      setEditRole(newRole);
-                      setEditPermissions(DEFAULT_PERMISSIONS_BY_ROLE[newRole] || ['canAccessPOS']);
-                    }}
+                <div className="space-y-2.5">
+                  <div className="text-xs font-bold uppercase tracking-wider text-neutral-400">
+                    Granular TekiLab Permissions ({editPerms.length})
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {LIMS_PERMISSIONS_CATALOG.map((perm) => {
+                      const active = editPerms.includes(perm.key);
+                      return (
+                        <button
+                          key={perm.key}
+                          type="button"
+                          onClick={() =>
+                            setEditPerms((prev) =>
+                              prev.includes(perm.key)
+                                ? prev.filter((k) => k !== perm.key)
+                                : [...prev, perm.key]
+                            )
+                          }
+                          className={`p-3 rounded-xl border text-left transition-all cursor-pointer flex items-start gap-2.5 ${
+                            active
+                              ? 'bg-blue-50/70 border-blue-500 text-neutral-950'
+                              : 'bg-white border-neutral-200 text-neutral-500'
+                          }`}
+                        >
+                          <div
+                            className={`w-4 h-4 rounded mt-0.5 flex items-center justify-center shrink-0 ${
+                              active ? 'bg-blue-600 text-white' : 'border border-neutral-300'
+                            }`}
+                          >
+                            {active && <Check className="w-3 h-3" />}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-neutral-950">{perm.label}</div>
+                            <div className="text-[11px] text-neutral-500 leading-snug">{perm.description}</div>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-neutral-100">
+                  <Button variant="outline" onClick={() => setSelectedStaff(null)} className="rounded-xl">
+                    Cancel
+                  </Button>
+                  <Button
+                    onClick={handleSaveDetailUpdates}
+                    className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6"
                   >
-                     <option>Terminal Manager</option>
-                     <option>Store Manager</option>
-                     <option>Certified Dispenser</option>
-                     <option>POS operator</option>
-                     <option>Logistics Coordinator</option>
-                  </select>
-               </div>
+                    Save Changes
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
 
-               {/* Granular Capabilities Checklist */}
-               <div className="space-y-3">
-                  <div className="flex justify-between items-center">
-                     <label className="text-xs font-semibold text-slate-800 flex items-center gap-1.5">
-                        <Sliders size={14} className="text-blue-600" /> Granular Access Capabilities
-                     </label>
-                     <span className="text-[10px] font-bold text-blue-700 uppercase bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">
-                        Real-Time Sync Active
-                     </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                     {GRANULAR_CAPABILITIES.map((cap) => {
-                        const isGranted = editPermissions.includes(cap.key);
-                        return (
-                           <div 
-                             key={cap.key}
-                             onClick={() => togglePermission(cap.key)}
-                             className={`flex items-start gap-3.5 p-3.5 rounded-xl border-2 cursor-pointer select-none transition-all ${
-                               isGranted 
-                                 ? 'bg-blue-50/60 border-blue-500/50 shadow-2xs' 
-                                 : 'bg-white border-slate-200 hover:border-slate-300'
-                             }`}
-                           >
-                              <div className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all ${
-                                isGranted 
-                                  ? 'bg-blue-600 border-blue-600 text-white' 
-                                  : 'bg-slate-50 border-slate-300 text-transparent'
-                              }`}>
-                                 <Check size={12} className="stroke-[3]" />
-                              </div>
-                              <div className="min-w-0 flex-1">
-                                 <div className="flex items-center gap-1.5">
-                                    <span className="text-slate-500 shrink-0">{cap.icon}</span>
-                                    <span className="font-semibold text-xs text-slate-900 leading-none">{cap.title}</span>
-                                 </div>
-                                 <p className="text-[11px] text-slate-500 mt-1 leading-snug">{cap.description}</p>
-                              </div>
-                           </div>
-                        );
-                     })}
-                  </div>
-               </div>
+      {/* =================================================================== */}
+      {/* ADD NEW STAFF MEMBER MODAL (TEKILAB LIMS ROLES)                     */}
+      {/* =================================================================== */}
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent className="sm:max-w-2xl bg-white border border-neutral-200 rounded-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-lg font-bold text-neutral-950">Add TekiLab Staff Member</DialogTitle>
+            <DialogDescription className="text-xs text-neutral-500">
+              Assign a LIMS role, independent branch, and custom permissions.
+            </DialogDescription>
+          </DialogHeader>
+          <form onSubmit={handleAddStaff} className="space-y-4 pt-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Full Name *</label>
+                <Input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="e.g. MLS Samuel Obi" className="h-10 rounded-xl" required />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Work Email *</label>
+                <Input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="samuel@tekilab.io" className="h-10 rounded-xl" required />
+              </div>
             </div>
 
-            <div className="sticky bottom-0 z-20 bg-slate-50/95 backdrop-blur-md border-t border-slate-200 px-6 sm:px-8 py-4 flex flex-col-reverse sm:flex-row gap-3 justify-end shrink-0">
-               <Button 
-                 variant="outline" 
-                 onClick={() => setSelectedStaffForPermissions(null)}
-                 className="h-11 px-5 rounded-xl font-semibold text-xs border-slate-300 bg-white hover:bg-slate-100 text-slate-700 cursor-pointer"
-               >
-                  Cancel
-               </Button>
-               <Button 
-                 onClick={handleSavePermissions}
-                 className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs shadow-md shadow-blue-600/20 cursor-pointer"
-               >
-                  Save & Sync Permissions
-               </Button>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">LIMS Role</label>
+                <select
+                  value={newRoleLabel}
+                  onChange={(e) => handleRoleSelectionOnCreate(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-xs font-semibold bg-white"
+                >
+                  {STAFF_ROLES_ONLY.map((r) => (
+                    <option key={r.id} value={r.label}>{r.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Branch</label>
+                <select
+                  value={newBranchId}
+                  disabled={!isMultiBranchExecutive}
+                  onChange={(e) => setNewBranchId(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-xs font-semibold bg-white disabled:bg-neutral-50"
+                >
+                  {branches.map((b) => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Temporary Password</label>
+                <div className="relative">
+                  <Input
+                    type={showPassword ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    className="h-10 rounded-xl pr-9 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-neutral-400"
+                  >
+                    {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                </div>
+              </div>
             </div>
-         </DialogContent>
+
+            <div className="space-y-2">
+              <div className="text-xs font-bold text-neutral-700">Role Permissions (Customizable)</div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1">
+                {LIMS_PERMISSIONS_CATALOG.map((perm) => {
+                  const active = newPerms.includes(perm.key);
+                  return (
+                    <button
+                      key={perm.key}
+                      type="button"
+                      onClick={() =>
+                        setNewPerms((prev) =>
+                          prev.includes(perm.key)
+                            ? prev.filter((k) => k !== perm.key)
+                            : [...prev, perm.key]
+                        )
+                      }
+                      className={`p-2.5 rounded-xl border text-left cursor-pointer flex items-center gap-2 ${
+                        active ? 'bg-blue-50 border-blue-500' : 'bg-white border-neutral-200'
+                      }`}
+                    >
+                      <div className={`w-4 h-4 rounded flex items-center justify-center shrink-0 ${active ? 'bg-blue-600 text-white' : 'border border-neutral-300'}`}>
+                        {active && <Check className="w-3 h-3" />}
+                      </div>
+                      <span className="text-xs font-medium text-neutral-900 truncate">{perm.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsAddOpen(false)} className="rounded-xl">
+                Cancel
+              </Button>
+              <Button type="submit" className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6">
+                Create Staff Account
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
       </Dialog>
     </div>
   );

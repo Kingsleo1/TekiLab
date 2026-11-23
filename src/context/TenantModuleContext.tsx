@@ -127,6 +127,8 @@ export const VIEW_TO_MODULE_MAP: Record<string, TekiLabModuleKey | 'core'> = {
   admin_settings: 'core',
   admin_integrations: 'core',
   patients: 'core', // Shared patient registry needed for lab intake
+  queue: 'core', // Live laboratory & front-desk queue engine
+  patient_portal: 'core', // Self-service patient portal
 
   // AI & Predictive Maintenance
   ai_assistant: 'ai_analytics',
@@ -137,7 +139,6 @@ export const VIEW_TO_MODULE_MAP: Record<string, TekiLabModuleKey | 'core'> = {
   // Hospital Management Module
   radiology: 'hospital_management',
   inpatient: 'hospital_management',
-  queue: 'hospital_management',
   appointments: 'hospital_management',
 
   // Pharmacy Module

@@ -1,35 +1,44 @@
-import { useState } from 'react';
-import { 
-  Users, 
-  UserPlus, 
-  Search, 
-  Clock, 
-  ShieldAlert, 
-  Heart, 
-  Activity, 
-  FileText, 
-  Phone, 
-  Mail, 
-  MapPin, 
-  Calendar, 
-  Check, 
-  AlertTriangle,
-  Stethoscope,
-  FlaskConical,
-  Pill,
-  CreditCard,
+import React, { useState, useMemo } from 'react';
+import {
+  UserPlus,
+  Search,
+  List,
+  LayoutGrid,
   ChevronRight,
-  Download,
-  Plus
+  Phone,
+  Calendar,
+  Activity,
+  FlaskConical,
+  Stethoscope,
+  Send,
+  ShieldAlert,
+  CheckCircle2,
+  Clock,
+  FileText,
+  X
 } from 'lucide-react';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { PatientRecord, ClinicalEncounter, LabOrder, ImagingOrder, PatientCharge } from '../../types/pharmacy';
-import { generateBrandedPDF, generateClinicalEncounterPDF } from '../../lib/reporting-utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription
+} from '@/components/ui/dialog';
+import {
+  PatientRecord,
+  ClinicalEncounter,
+  LabOrder,
+  ImagingOrder,
+  PatientCharge
+} from '../../types/pharmacy';
+import {
+  ALL_DEPARTMENTS,
+  TekiLabDepartment,
+  normalizeNigerianWhatsAppPhone
+} from '../../config/roles';
+import { useNotifications } from '../../context/NotificationContext';
 import { toast } from 'sonner';
 
 interface PatientCentralProps {
@@ -41,6 +50,7 @@ interface PatientCentralProps {
   charges?: PatientCharge[];
   onSelectPatientForConsultation?: (patient: PatientRecord) => void;
   onTransferPatient?: (patient: PatientRecord, targetDepartment: string, notes?: string) => void;
+  onStartRapidTest?: (patient: PatientRecord) => void;
 }
 
 export function PatientCentral({
@@ -51,645 +61,576 @@ export function PatientCentral({
   imagingOrders = [],
   charges = [],
   onSelectPatientForConsultation,
-  onTransferPatient
+  onTransferPatient,
+  onStartRapidTest
 }: PatientCentralProps) {
-  const [searchTerm, setSearchType] = useState('');
-  const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(patients[0] || null);
+  const { notifyTransfer } = useNotifications();
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
+  const [detailTab, setDetailTab] = useState<'overview' | 'logs' | 'transfer'>('overview');
+
+  // Register New Patient Modal
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
-  const [possibleDuplicate, setPossibleDuplicate] = useState<PatientRecord | null>(null);
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
+  const [gender, setGender] = useState<'Male' | 'Female'>('Male');
+  const [dob, setDob] = useState('1992-05-14');
+  const [bloodGroup, setBloodGroup] = useState('O+');
+  const [allergiesText, setAllergiesText] = useState('');
+  const [chronicText, setChronicText] = useState('');
+  const [address, setAddress] = useState('');
 
-  // Registration Form State
-  const [formData, setFormData] = useState({
-    fullName: '',
-    dob: '',
-    sex: 'Male' as 'Male' | 'Female' | 'Other',
-    phone: '',
-    email: '',
-    address: '',
-    bloodGroup: 'O+' as any,
-    genotype: 'AA' as any,
-    allergies: '',
-    chronicConditions: '',
-    emergencyContactName: '',
-    emergencyContactPhone: '',
-    emergencyContactRelation: '',
-    hmoProvider: '',
-    hmoPolicyNumber: '',
-    hmoPlanName: ''
-  });
+  // Transfer Department form inside Detail Modal
+  const [transferDept, setTransferDept] = useState<TekiLabDepartment>('Laboratory');
+  const [transferNotes, setTransferNotes] = useState('');
 
-  const filteredPatients = patients.filter(p => 
-    p.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.mrn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.phone.includes(searchTerm)
-  );
+  const filteredPatients = useMemo(() => {
+    const q = searchTerm.trim().toLowerCase();
+    if (!q) return patients;
+    return patients.filter(
+      (p) =>
+        p.fullName?.toLowerCase().includes(q) ||
+        p.mrn?.toLowerCase().includes(q) ||
+        p.phone?.toLowerCase().includes(q)
+    );
+  }, [patients, searchTerm]);
 
-  const checkDuplicate = (name: string, phone: string) => {
-    if (!name || !phone) return null;
-    return patients.find(p => 
-      p.fullName.toLowerCase().trim() === name.toLowerCase().trim() ||
-      (p.phone && p.phone.replace(/\s+/g, '') === phone.replace(/\s+/g, ''))
-    ) || null;
-  };
+  const phonePreview = useMemo(() => normalizeNigerianWhatsAppPhone(phone), [phone]);
 
-  const handleNameChange = (val: string) => {
-    setFormData(prev => ({ ...prev, fullName: val }));
-    const match = checkDuplicate(val, formData.phone);
-    setPossibleDuplicate(match);
-  };
+  // Build chronological medical & lab history logs for the selected patient
+  const patientActivityLogs = useMemo(() => {
+    if (!selectedPatient) return [];
+    const logs: {
+      id: string;
+      date: string;
+      category: 'Lab Result' | 'Consultation' | 'Imaging' | 'Billing';
+      title: string;
+      detail: string;
+      status: string;
+    }[] = [];
 
-  const handlePhoneChange = (val: string) => {
-    setFormData(prev => ({ ...prev, phone: val }));
-    const match = checkDuplicate(formData.fullName, val);
-    setPossibleDuplicate(match);
-  };
+    labOrders
+      .filter((l) => l.patientId === selectedPatient.id || l.patientName === selectedPatient.fullName)
+      .forEach((l) => {
+        logs.push({
+          id: l.id,
+          date: l.validatedAt || l.createdAt || new Date().toISOString(),
+          category: 'Lab Result',
+          title: `${l.testName} (${l.accessionNumber})`,
+          detail: l.likelyIssue || l.clinicalInterpretation || `Sample: ${l.sampleType}`,
+          status: l.orderStatus
+        });
+      });
 
-  const handleRegisterSubmit = (e: any) => {
+    encounters
+      .filter((e) => e.patientId === selectedPatient.id)
+      .forEach((e) => {
+        logs.push({
+          id: e.id,
+          date: (e as any).createdAt || (e as any).visitDate || new Date().toISOString(),
+          category: 'Consultation',
+          title: (e as any).diagnosis || (e as any).chiefComplaint || 'Clinical Consultation',
+          detail: (e as any).clinicalNotes || (e as any).doctorNotes || 'Outpatient clinical visit logged.',
+          status: (e as any).status || 'Completed'
+        });
+      });
+
+    imagingOrders
+      .filter((im) => im.patientId === selectedPatient.id)
+      .forEach((im) => {
+        logs.push({
+          id: im.id,
+          date: im.createdAt || new Date().toISOString(),
+          category: 'Imaging',
+          title: `${im.testName} (${im.modality})`,
+          detail: im.bodySite || 'Radiology scan order',
+          status: im.orderStatus
+        });
+      });
+
+    charges
+      .filter((c) => c.patientId === selectedPatient.id)
+      .forEach((c) => {
+        logs.push({
+          id: c.id,
+          date: (c as any).createdAt || new Date().toISOString(),
+          category: 'Billing',
+          title: (c as any).description || 'Laboratory / Service Charge',
+          detail: `₦${Number((c as any).amountNaira || (c as any).amount || 0).toLocaleString()}`,
+          status: (c as any).paymentStatus || 'Paid'
+        });
+      });
+
+    return logs.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [selectedPatient, labOrders, encounters, imagingOrders, charges]);
+
+  const handleRegisterSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.fullName || !formData.phone) {
-      toast.error('Patient full name and phone number are required.');
+    if (!fullName.trim()) {
+      toast.error('Please enter the patient full name.');
       return;
     }
 
-    const newMrn = `TM-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+    const norm = normalizeNigerianWhatsAppPhone(phone);
     const newPatient: PatientRecord = {
       id: `pat-${Date.now()}`,
-      mrn: newMrn,
-      fullName: formData.fullName,
-      dob: formData.dob || '1990-01-01',
-      sex: formData.sex,
-      phone: formData.phone,
-      email: formData.email,
-      address: formData.address,
-      bloodGroup: formData.bloodGroup,
-      genotype: formData.genotype,
-      allergies: formData.allergies ? formData.allergies.split(',').map(a => a.trim()) : [],
-      chronicConditions: formData.chronicConditions ? formData.chronicConditions.split(',').map(c => c.trim()) : [],
-      emergencyContactName: formData.emergencyContactName,
-      emergencyContactPhone: formData.emergencyContactPhone,
-      emergencyContactRelation: formData.emergencyContactRelation,
-      insurance: formData.hmoProvider ? {
-        provider: formData.hmoProvider,
-        planName: formData.hmoPlanName || 'Standard Health Coverage',
-        policyNumber: formData.hmoPolicyNumber || 'HMO-PENDING',
-        status: 'Active'
-      } : undefined,
-      registeredAt: new Date().toISOString()
-    };
+      mrn: `TK-PAT-${Math.floor(10000 + Math.random() * 89999)}`,
+      fullName: fullName.trim(),
+      phone: norm.e164 || phone.trim() || '+2348030000000',
+      gender,
+      dob,
+      bloodGroup,
+      address: address.trim() || 'Lagos, Nigeria',
+      allergies: allergiesText
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      chronicConditions: chronicText
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      createdAt: new Date().toISOString()
+    } as any;
 
     onAddPatient(newPatient);
-    setSelectedPatient(newPatient);
     setIsRegisterOpen(false);
-    toast.success(`Patient registered successfully! MRN: ${newMrn}`);
-    setFormData({
-      fullName: '',
-      dob: '',
-      sex: 'Male',
-      phone: '',
-      email: '',
-      address: '',
-      bloodGroup: 'O+',
-      genotype: 'AA',
-      allergies: '',
-      chronicConditions: '',
-      emergencyContactName: '',
-      emergencyContactPhone: '',
-      emergencyContactRelation: '',
-      hmoProvider: '',
-      hmoPolicyNumber: '',
-      hmoPlanName: ''
+    setFullName('');
+    setPhone('');
+    setAllergiesText('');
+    setChronicText('');
+    setAddress('');
+    toast.success(`Registered ${newPatient.fullName}`, {
+      description: norm.isWhatsAppQualified
+        ? `WhatsApp Auto-Qualified (${norm.display})`
+        : `MRN: ${newPatient.mrn}`
     });
-    setPossibleDuplicate(null);
   };
 
-  // Build timeline items for selected patient
-  const patientEncounters = encounters.filter(e => e.patientId === selectedPatient?.id);
-  const patientLabs = labOrders.filter(l => l.patientId === selectedPatient?.id);
-  const patientImages = imagingOrders.filter(i => i.patientId === selectedPatient?.id);
-  const patientCharges = charges.filter(c => c.patientId === selectedPatient?.id);
+  const handleExecuteTransfer = () => {
+    if (!selectedPatient) return;
+    onTransferPatient?.(selectedPatient, transferDept, transferNotes);
+    notifyTransfer({
+      fromDepartment: 'Patient Registry',
+      toDepartment: transferDept,
+      patientName: selectedPatient.fullName,
+      notes: transferNotes || 'Routed from Registered Patients directory'
+    });
+    setTransferNotes('');
+  };
+
+  const selectedPhoneMeta = selectedPatient
+    ? normalizeNigerianWhatsAppPhone(selectedPatient.phone)
+    : null;
 
   return (
-    <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-sky-900 via-slate-900 to-indigo-950 p-6 rounded-2xl text-white shadow-lg">
+    <div className="max-w-5xl mx-auto space-y-6 pb-10 font-sans text-neutral-950">
+      {/* Clean Minimalist Header */}
+      <div className="bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Badge className="bg-sky-500/20 text-sky-300 border-sky-400/30 text-xs uppercase tracking-wider">
-              Patient Master Index
-            </Badge>
-            <span className="text-xs text-slate-400">One Patient • One Record</span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white">Central Patient Registry</h1>
-          <p className="text-slate-300 text-sm mt-1">
-            Unified longitudinal electronic health records across All Clinical, Lab, Radiology, and Pharmacy workflows.
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-950">
+            Registered Patients
+          </h1>
+          <p className="text-sm text-neutral-500 mt-0.5">
+            {patients.length} registered patients · Click any name to inspect full profile &amp; medical history logs.
           </p>
         </div>
-        <Button 
+        <Button
           onClick={() => setIsRegisterOpen(true)}
-          className="bg-sky-500 hover:bg-sky-400 text-white font-semibold shadow-md gap-2"
+          className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shrink-0"
         >
-          <UserPlus className="w-4 h-4" />
-          Register New Patient
+          <UserPlus className="w-4 h-4 mr-2" />
+          Register Patient
         </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left List Column */}
-        <div className="lg:col-span-4 space-y-4">
-          <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold flex items-center justify-between">
-                <span>Patients ({patients.length})</span>
-                <Users className="w-4 h-4 text-sky-600" />
-              </CardTitle>
-              <div className="relative mt-2">
-                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                <Input 
-                  placeholder="Search by MRN, Name, Phone..." 
-                  className="pl-9 bg-slate-50 dark:bg-slate-900 text-xs"
-                  value={searchTerm}
-                  onChange={(e) => setSearchType(e.target.value)}
-                />
-              </div>
-            </CardHeader>
-            <CardContent className="p-2 space-y-1 max-h-[600px] overflow-y-auto">
-              {filteredPatients.length === 0 ? (
-                <p className="text-xs text-center py-6 text-slate-500">No matching patient records found.</p>
-              ) : (
-                filteredPatients.map((patient) => {
-                  const isSelected = selectedPatient?.id === patient.id;
-                  return (
-                    <button
-                      key={patient.id}
-                      onClick={() => setSelectedPatient(patient)}
-                      className={`w-full text-left p-3 rounded-xl transition-all flex items-center justify-between border ${
-                        isSelected 
-                          ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-300 dark:border-sky-800 shadow-sm' 
-                          : 'bg-white dark:bg-slate-900 border-transparent hover:bg-slate-50 dark:hover:bg-slate-800/50'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">{patient.fullName}</span>
-                          <Badge variant="outline" className="text-[10px] bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300">
-                            {patient.sex}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-1">
-                          <span className="font-mono text-sky-600 dark:text-sky-400 font-medium">{patient.mrn}</span>
-                          <span>•</span>
-                          <span>{patient.phone}</span>
-                        </div>
-                      </div>
-                      <ChevronRight className={`w-4 h-4 text-slate-400 ${isSelected ? 'text-sky-600' : ''}`} />
-                    </button>
-                  );
-                })
-              )}
-            </CardContent>
-          </Card>
+      {/* Search Bar & List/Grid Toggle */}
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+        <div className="relative flex-1">
+          <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <Input
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            placeholder="Search registered patients by name, MRN, or phone..."
+            className="pl-10 h-11 bg-white border-neutral-200 rounded-xl text-sm"
+          />
         </div>
 
-        {/* Right Detail Column */}
-        <div className="lg:col-span-8">
-          {selectedPatient ? (
-            <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
-              <CardHeader className="bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 pb-4">
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-2xl bg-sky-600 text-white flex items-center justify-center font-bold text-lg shadow-sm">
-                      {selectedPatient.fullName.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{selectedPatient.fullName}</h2>
-                        <Badge className="bg-sky-100 text-sky-800 dark:bg-sky-900/50 dark:text-sky-300 border-sky-300 font-mono text-xs">
-                          {selectedPatient.mrn}
-                        </Badge>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        <span className="flex items-center gap-1"><Calendar className="w-3.5 h-3.5" /> DOB: {selectedPatient.dob}</span>
-                        <span>•</span>
-                        <span className="flex items-center gap-1"><Phone className="w-3.5 h-3.5" /> {selectedPatient.phone}</span>
-                        {selectedPatient.bloodGroup && (
-                          <>
-                            <span>•</span>
-                            <span className="font-semibold text-rose-600">Blood: {selectedPatient.bloodGroup}</span>
-                          </>
-                        )}
-                        {selectedPatient.genotype && (
-                          <>
-                            <span>•</span>
-                            <span className="font-semibold text-indigo-600">Genotype: {selectedPatient.genotype}</span>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    <Button 
-                      variant="outline"
-                      size="sm"
-                      onClick={() => {
-                        generateBrandedPDF(
-                          `PATIENT MASTER DOSSIER — ${selectedPatient.fullName}`,
-                          `Medical Record Number: ${selectedPatient.mrn} | DOB: ${selectedPatient.dob} | Sex: ${selectedPatient.sex}`,
-                          [
-                            { label: 'Patient MRN', value: selectedPatient.mrn },
-                            { label: 'Blood Group / Genotype', value: `${selectedPatient.bloodGroup || 'N/A'} / ${selectedPatient.genotype || 'N/A'}` },
-                            { label: 'Phone Number', value: selectedPatient.phone },
-                            { label: 'HMO / Insurance Provider', value: selectedPatient.insuranceProvider || 'Private Out-of-Pocket' },
-                            { label: 'Known Allergies', value: selectedPatient.allergies?.join(', ') || 'None Reported' }
-                          ],
-                          ['Encounter Date', 'Category / Department', 'Primary Diagnosis / Test', 'Attending Clinician'],
-                          patientEncounters.map(e => [
-                            e.createdAt ? new Date(e.createdAt).toLocaleDateString() : 'Recent',
-                            e.encounterType || 'OPD',
-                            e.primaryDiagnosis || 'Consultation',
-                            e.doctorName || 'Attending Doctor'
-                          ]),
-                          `Patient_Dossier_${selectedPatient.mrn}`
-                        );
-                        toast.success('Downloading Patient Master Dossier PDF report with Teki Med logo...');
-                      }}
-                      className="gap-2 text-xs"
-                    >
-                      <Download className="w-3.5 h-3.5 text-slate-600" />
-                      Export Dossier
-                    </Button>
-
-                    {onSelectPatientForConsultation && (
-                      <Button 
-                        onClick={() => onSelectPatientForConsultation(selectedPatient)}
-                        className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 font-medium text-xs shadow"
-                      >
-                        <Stethoscope className="w-4 h-4" />
-                        Start Consultation
-                      </Button>
-                    )}
-                  </div>
-                </div>
-              </CardHeader>
-
-              <CardContent className="p-6">
-                <Tabs defaultValue="timeline" className="w-full">
-                  <TabsList className="bg-slate-100 dark:bg-slate-900 p-1 mb-6">
-                    <TabsTrigger value="timeline" className="text-xs">Longitudinal Timeline</TabsTrigger>
-                    <TabsTrigger value="profile" className="text-xs">Demographics & Insurance</TabsTrigger>
-                    <TabsTrigger value="allergies" className="text-xs">Allergies & Medical History</TabsTrigger>
-                    <TabsTrigger value="billing" className="text-xs">Billing Ledger</TabsTrigger>
-                  </TabsList>
-
-                  {/* Timeline Tab */}
-                  <TabsContent value="timeline" className="space-y-4">
-                    <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-sky-600" />
-                      Chronological Patient Journey
-                    </h3>
-
-                    {patientEncounters.length === 0 && patientLabs.length === 0 && patientImages.length === 0 ? (
-                      <div className="p-8 text-center border border-dashed border-slate-200 dark:border-slate-800 rounded-xl">
-                        <Activity className="w-8 h-8 text-slate-400 mx-auto mb-2" />
-                        <p className="text-xs text-slate-500">No clinical encounters or lab orders logged for this patient yet.</p>
-                      </div>
-                    ) : (
-                      <div className="relative pl-6 border-l-2 border-sky-200 dark:border-sky-900 space-y-6">
-                        {patientEncounters.map((enc) => (
-                          <div key={enc.id} className="relative group">
-                            <div className="absolute -left-[31px] top-0.5 w-4 h-4 rounded-full bg-sky-600 ring-4 ring-sky-100 dark:ring-sky-950 flex items-center justify-center">
-                              <Stethoscope className="w-2.5 h-2.5 text-white" />
-                            </div>
-                            <div className="bg-slate-50 dark:bg-slate-900/60 p-4 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-xs text-sky-600 dark:text-sky-400">{enc.encounterType}</span>
-                                <span className="text-[10px] text-slate-400">{new Date(enc.createdAt).toLocaleString()}</span>
-                              </div>
-                              <p className="text-xs text-slate-800 dark:text-slate-200 font-medium">Chief Complaint: {enc.chiefComplaint}</p>
-                              {enc.primaryDiagnosis && (
-                                <div className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 p-2 rounded border border-emerald-200 dark:border-emerald-900">
-                                  <strong>Diagnosis:</strong> {enc.primaryDiagnosis} ({enc.icdCode || 'N/A'})
-                                </div>
-                              )}
-                              {enc.prescriptions && enc.prescriptions.length > 0 && (
-                                <div className="text-xs text-slate-600 dark:text-slate-400">
-                                  <strong>Prescriptions:</strong> {enc.prescriptions.map(p => p.drugName).join(', ')}
-                                </div>
-                              )}
-                              <div className="flex items-center justify-between pt-2 border-t border-slate-200/60 dark:border-slate-800 text-[11px]">
-                                <span className="text-slate-400">Consultant: {enc.doctorName}</span>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  className="h-7 text-xs text-blue-600 gap-1 hover:bg-blue-50 dark:hover:bg-blue-950/40"
-                                  onClick={() => {
-                                    generateClinicalEncounterPDF(enc, selectedPatient);
-                                    toast.success('Downloading Consultation Summary PDF with Teki Med logo...');
-                                  }}
-                                >
-                                  <Download className="w-3 h-3" />
-                                  Download PDF
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-
-                        {patientLabs.map((lab) => (
-                          <div key={lab.id} className="relative group">
-                            <div className="absolute -left-[31px] top-0.5 w-4 h-4 rounded-full bg-purple-600 ring-4 ring-purple-100 dark:ring-purple-950 flex items-center justify-center">
-                              <FlaskConical className="w-2.5 h-2.5 text-white" />
-                            </div>
-                            <div className="bg-purple-50/50 dark:bg-purple-950/20 p-4 rounded-xl border border-purple-200 dark:border-purple-900/40 space-y-2">
-                              <div className="flex items-center justify-between">
-                                <span className="font-semibold text-xs text-purple-700 dark:text-purple-300">Lab Test: {lab.testName}</span>
-                                <Badge className="text-[10px] bg-purple-200 dark:bg-purple-900 text-purple-800 dark:text-purple-200">{lab.orderStatus}</Badge>
-                              </div>
-                              <div className="text-xs text-slate-600 dark:text-slate-400">
-                                Accession: <span className="font-mono">{lab.accessionNumber}</span>
-                              </div>
-                              {lab.clinicalInterpretation && (
-                                <p className="text-xs text-slate-700 dark:text-slate-300 bg-white dark:bg-slate-900 p-2 rounded">
-                                  Interpretation: {lab.clinicalInterpretation}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </TabsContent>
-
-                  {/* Profile Tab */}
-                  <TabsContent value="profile" className="space-y-4 text-xs">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <Card className="p-4 space-y-2 border-slate-200 dark:border-slate-800">
-                        <h4 className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                          <UserPlus className="w-4 h-4 text-sky-600" /> Personal Information
-                        </h4>
-                        <div className="space-y-1 text-slate-600 dark:text-slate-400">
-                          <p><strong>Full Name:</strong> {selectedPatient.fullName}</p>
-                          <p><strong>Gender:</strong> {selectedPatient.sex}</p>
-                          <p><strong>Date of Birth:</strong> {selectedPatient.dob}</p>
-                          <p><strong>Phone:</strong> {selectedPatient.phone}</p>
-                          <p><strong>Email:</strong> {selectedPatient.email || 'N/A'}</p>
-                          <p><strong>Address:</strong> {selectedPatient.address || 'N/A'}</p>
-                        </div>
-                      </Card>
-
-                      <Card className="p-4 space-y-2 border-slate-200 dark:border-slate-800">
-                        <h4 className="font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                          <ShieldAlert className="w-4 h-4 text-emerald-600" /> HMO & Health Insurance
-                        </h4>
-                        {selectedPatient.insurance ? (
-                          <div className="space-y-1 text-slate-600 dark:text-slate-400">
-                            <p><strong>HMO Provider:</strong> {selectedPatient.insurance.provider}</p>
-                            <p><strong>Plan Name:</strong> {selectedPatient.insurance.planName}</p>
-                            <p><strong>Policy Number:</strong> {selectedPatient.insurance.policyNumber}</p>
-                            <p><strong>Status:</strong> <Badge className="bg-emerald-100 text-emerald-800">{selectedPatient.insurance.status}</Badge></p>
-                          </div>
-                        ) : (
-                          <p className="text-slate-400 italic">Self-Pay Patient (No active HMO insurance configured).</p>
-                        )}
-                      </Card>
-                    </div>
-                  </TabsContent>
-
-                  {/* Allergies Tab */}
-                  <TabsContent value="allergies" className="space-y-4 text-xs">
-                    <Card className="p-4 border-slate-200 dark:border-slate-800 space-y-3">
-                      <h4 className="font-semibold text-rose-600 flex items-center gap-2">
-                        <AlertTriangle className="w-4 h-4" /> Drug & Food Allergies
-                      </h4>
-                      {selectedPatient.allergies.length === 0 ? (
-                        <p className="text-slate-400">No known allergies reported.</p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedPatient.allergies.map((allergy, i) => (
-                            <Badge key={i} className="bg-rose-100 text-rose-800 dark:bg-rose-950 dark:text-rose-300 border-rose-300">
-                              {allergy}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </Card>
-
-                    <Card className="p-4 border-slate-200 dark:border-slate-800 space-y-3">
-                      <h4 className="font-semibold text-amber-600 flex items-center gap-2">
-                        <Heart className="w-4 h-4" /> Pre-Existing Chronic Conditions
-                      </h4>
-                      {selectedPatient.chronicConditions.length === 0 ? (
-                        <p className="text-slate-400">No chronic medical conditions recorded.</p>
-                      ) : (
-                        <div className="flex flex-wrap gap-2">
-                          {selectedPatient.chronicConditions.map((cond, i) => (
-                            <Badge key={i} className="bg-amber-100 text-amber-800 dark:bg-amber-950 dark:text-amber-300 border-amber-300">
-                              {cond}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </Card>
-                  </TabsContent>
-
-                  {/* Billing Ledger Tab */}
-                  <TabsContent value="billing" className="space-y-4">
-                    <h4 className="text-xs font-semibold text-slate-900 dark:text-slate-100 flex items-center gap-2">
-                      <CreditCard className="w-4 h-4 text-emerald-600" /> Patient Service Ledger
-                    </h4>
-                    {patientCharges.length === 0 ? (
-                      <p className="text-xs text-slate-400 text-center py-6">No charges billed to this patient yet.</p>
-                    ) : (
-                      <div className="space-y-2">
-                        {patientCharges.map((chg) => (
-                          <div key={chg.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-900 rounded-lg text-xs border border-slate-200 dark:border-slate-800">
-                            <div>
-                              <p className="font-semibold text-slate-900 dark:text-slate-100">{chg.description}</p>
-                              <span className="text-[10px] text-slate-400">{chg.category} • {new Date(chg.createdAt).toLocaleDateString()}</span>
-                            </div>
-                            <div className="text-right">
-                              <p className="font-bold text-slate-900 dark:text-slate-100">₦{chg.totalAmountNaira.toLocaleString()}</p>
-                              <Badge className={chg.paymentStatus === 'Paid' ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'}>
-                                {chg.paymentStatus}
-                              </Badge>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </TabsContent>
-                </Tabs>
-              </CardContent>
-            </Card>
-          ) : (
-            <Card className="border-slate-200 dark:border-slate-800 p-12 text-center text-slate-500">
-              <Users className="w-12 h-12 text-slate-300 mx-auto mb-3" />
-              <p>Select a patient from the list to view their complete master health record.</p>
-            </Card>
-          )}
+        <div className="inline-flex items-center p-1 rounded-xl bg-neutral-100 border border-neutral-200 self-end sm:self-auto">
+          <button
+            type="button"
+            onClick={() => setViewMode('list')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+              viewMode === 'list'
+                ? 'bg-white text-neutral-950 shadow-xs'
+                : 'text-neutral-500 hover:text-neutral-900'
+            }`}
+          >
+            <List className="w-3.5 h-3.5" />
+            List
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode('grid')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+              viewMode === 'grid'
+                ? 'bg-white text-neutral-950 shadow-xs'
+                : 'text-neutral-500 hover:text-neutral-900'
+            }`}
+          >
+            <LayoutGrid className="w-3.5 h-3.5" />
+            Grid
+          </button>
         </div>
       </div>
 
-      {/* Registration Modal with Duplicate Check */}
+      {/* Clean List View (Default: Just Name) OR Optional Grid View */}
+      {filteredPatients.length === 0 ? (
+        <div className="bg-white border border-dashed border-neutral-200 rounded-2xl py-16 text-center text-sm text-neutral-400">
+          No patients matched "{searchTerm}".
+        </div>
+      ) : viewMode === 'list' ? (
+        <div className="bg-white border border-neutral-200 rounded-2xl divide-y divide-neutral-100 overflow-hidden shadow-xs">
+          {filteredPatients.map((patient) => (
+            <button
+              key={patient.id}
+              type="button"
+              onClick={() => {
+                setSelectedPatient(patient);
+                setDetailTab('overview');
+              }}
+              className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-blue-50/40 transition-colors cursor-pointer group"
+            >
+              <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700 transition-colors">
+                {patient.fullName}
+              </span>
+              <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600 transition-colors" />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {filteredPatients.map((patient) => (
+            <button
+              key={patient.id}
+              type="button"
+              onClick={() => {
+                setSelectedPatient(patient);
+                setDetailTab('overview');
+              }}
+              className="p-4 bg-white border border-neutral-200 rounded-2xl text-left hover:border-blue-500 hover:shadow-xs transition-all cursor-pointer flex items-center justify-between gap-3 group"
+            >
+              <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700 truncate">
+                {patient.fullName}
+              </span>
+              <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600 shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* =================================================================== */}
+      {/* FULL PATIENT DETAIL PAGE MODAL (PROFILE + MEDICAL HISTORY LOGS)     */}
+      {/* =================================================================== */}
+      <Dialog open={Boolean(selectedPatient)} onOpenChange={(open) => !open && setSelectedPatient(null)}>
+        <DialogContent className="sm:max-w-3xl bg-white border border-neutral-200 p-0 overflow-hidden rounded-2xl">
+          {selectedPatient && (
+            <>
+              <div className="px-6 py-5 border-b border-neutral-100 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2 text-xs font-mono text-blue-600 font-semibold">
+                    <span>{selectedPatient.mrn}</span>
+                    {selectedPhoneMeta?.isWhatsAppQualified && (
+                      <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 font-sans text-[11px]">
+                        +234 WhatsApp Qualified
+                      </span>
+                    )}
+                  </div>
+                  <h2 className="text-xl font-bold text-neutral-950 mt-0.5">
+                    {selectedPatient.fullName}
+                  </h2>
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {onStartRapidTest && (
+                    <Button
+                      size="sm"
+                      onClick={() => {
+                        onStartRapidTest(selectedPatient);
+                        setSelectedPatient(null);
+                      }}
+                      className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+                    >
+                      <FlaskConical className="w-3.5 h-3.5 mr-1.5" />
+                      5-Min Rapid Test
+                    </Button>
+                  )}
+                  {onSelectPatientForConsultation && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        onSelectPatientForConsultation(selectedPatient);
+                        setSelectedPatient(null);
+                      }}
+                      className="rounded-xl border-neutral-200 text-xs font-semibold"
+                    >
+                      <Stethoscope className="w-3.5 h-3.5 mr-1.5 text-blue-600" />
+                      Consult
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Detail Tabs */}
+              <div className="px-6 pt-3 border-b border-neutral-100 flex items-center gap-2 bg-neutral-50/50">
+                {[
+                  { id: 'overview', label: 'Patient Details' },
+                  { id: 'logs', label: `Medical & Lab Logs (${patientActivityLogs.length})` },
+                  { id: 'transfer', label: 'Transfer Department' }
+                ].map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setDetailTab(t.id as any)}
+                    className={`px-4 py-2.5 text-xs font-semibold border-b-2 transition-colors cursor-pointer ${
+                      detailTab === t.id
+                        ? 'border-blue-600 text-blue-700'
+                        : 'border-transparent text-neutral-500 hover:text-neutral-900'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="p-6 max-h-[65vh] overflow-y-auto space-y-5">
+                {detailTab === 'overview' && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+                    <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1">
+                      <div className="text-[11px] font-semibold uppercase text-neutral-400">Phone / WhatsApp</div>
+                      <div className="font-semibold text-neutral-950 flex items-center gap-2">
+                        <Phone className="w-3.5 h-3.5 text-blue-600" />
+                        {selectedPhoneMeta?.display || selectedPatient.phone || 'Not provided'}
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1">
+                      <div className="text-[11px] font-semibold uppercase text-neutral-400">Gender &amp; DOB</div>
+                      <div className="font-semibold text-neutral-950 flex items-center gap-2">
+                        <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                        {(selectedPatient as any).gender || (selectedPatient as any).sex || 'N/A'} · {(selectedPatient as any).dob || 'N/A'}
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1">
+                      <div className="text-[11px] font-semibold uppercase text-neutral-400">Blood Group</div>
+                      <div className="font-semibold text-neutral-950">
+                        {(selectedPatient as any).bloodGroup || 'Not recorded'}
+                      </div>
+                    </div>
+                    <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1">
+                      <div className="text-[11px] font-semibold uppercase text-neutral-400">Address</div>
+                      <div className="font-semibold text-neutral-950">
+                        {(selectedPatient as any).address || 'Lagos, Nigeria'}
+                      </div>
+                    </div>
+                    <div className="sm:col-span-2 p-4 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1.5">
+                      <div className="text-[11px] font-semibold uppercase text-neutral-400 flex items-center gap-1.5">
+                        <ShieldAlert className="w-3.5 h-3.5 text-blue-600" />
+                        Allergies &amp; Chronic Conditions
+                      </div>
+                      <div className="text-xs text-neutral-700">
+                        <strong>Allergies:</strong>{' '}
+                        {selectedPatient.allergies?.length ? selectedPatient.allergies.join(', ') : 'None recorded'}
+                      </div>
+                      <div className="text-xs text-neutral-700">
+                        <strong>Chronic Conditions:</strong>{' '}
+                        {selectedPatient.chronicConditions?.length ? selectedPatient.chronicConditions.join(', ') : 'None recorded'}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {detailTab === 'logs' && (
+                  <div className="space-y-3">
+                    {patientActivityLogs.length === 0 ? (
+                      <div className="py-12 text-center text-xs text-neutral-400 border border-dashed border-neutral-200 rounded-xl">
+                        No laboratory or medical history logs recorded for this patient yet.
+                      </div>
+                    ) : (
+                      patientActivityLogs.map((log) => (
+                        <div
+                          key={log.id}
+                          className="p-4 rounded-xl border border-neutral-200 bg-white flex items-start justify-between gap-4"
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center gap-2">
+                              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-bold uppercase">
+                                {log.category}
+                              </span>
+                              <span className="text-xs font-bold text-neutral-950">{log.title}</span>
+                            </div>
+                            <p className="text-xs text-neutral-600">{log.detail}</p>
+                            <div className="text-[11px] text-neutral-400 flex items-center gap-1.5">
+                              <Clock className="w-3 h-3" />
+                              {new Date(log.date).toLocaleString()}
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-1 rounded-full bg-neutral-100 text-neutral-800 text-[11px] font-semibold shrink-0">
+                            {log.status}
+                          </span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
+
+                {detailTab === 'transfer' && (
+                  <div className="space-y-4">
+                    <p className="text-xs text-neutral-500">
+                      Transferring a patient fires a <strong>loud audible notification</strong> on the receiving department&apos;s dashboard and adds them to the live queue.
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {ALL_DEPARTMENTS.map((dept) => (
+                        <button
+                          key={dept}
+                          type="button"
+                          onClick={() => setTransferDept(dept)}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-semibold border cursor-pointer transition-colors ${
+                            transferDept === dept
+                              ? 'bg-blue-600 text-white border-blue-600'
+                              : 'bg-white text-neutral-700 border-neutral-200 hover:border-neutral-400'
+                          }`}
+                        >
+                          {dept}
+                        </button>
+                      ))}
+                    </div>
+                    <Input
+                      value={transferNotes}
+                      onChange={(e) => setTransferNotes(e.target.value)}
+                      placeholder={`Optional handover note for ${transferDept}...`}
+                      className="h-10 rounded-xl border-neutral-200 text-sm"
+                    />
+                    <Button
+                      onClick={handleExecuteTransfer}
+                      className="h-10 px-5 rounded-xl bg-neutral-950 hover:bg-blue-600 text-white font-semibold"
+                    >
+                      <Send className="w-4 h-4 mr-2" />
+                      Transfer &amp; Ring {transferDept}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* =================================================================== */}
+      {/* REGISTER NEW PATIENT MODAL                                          */}
+      {/* =================================================================== */}
       <Dialog open={isRegisterOpen} onOpenChange={setIsRegisterOpen}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="sm:max-w-lg bg-white border border-neutral-200 rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-slate-900 dark:text-slate-100">
-              <UserPlus className="w-5 h-5 text-sky-600" /> Register Patient Master Record
-            </DialogTitle>
-            <DialogDescription className="text-xs text-slate-500">
-              Create a unique Patient MRN. Automated duplicate detection checks existing records.
+            <DialogTitle className="text-lg font-bold text-neutral-950">Register New Patient</DialogTitle>
+            <DialogDescription className="text-xs text-neutral-500">
+              Nigerian +234 numbers automatically qualify for instant WhatsApp result delivery.
             </DialogDescription>
           </DialogHeader>
-
-          {possibleDuplicate && (
-            <div className="bg-amber-50 border border-amber-300 dark:bg-amber-950/40 p-3 rounded-lg text-xs space-y-2">
-              <div className="flex items-center gap-2 text-amber-800 dark:text-amber-300 font-semibold">
-                <AlertTriangle className="w-4 h-4 text-amber-600" /> Possible Existing Patient Found!
-              </div>
-              <p className="text-amber-700 dark:text-amber-400">
-                A patient matching <strong>"{possibleDuplicate.fullName}"</strong> or phone <strong>"{possibleDuplicate.phone}"</strong> (MRN: {possibleDuplicate.mrn}) already exists in the central database.
-              </p>
-              <Button 
-                type="button" 
-                size="sm" 
-                variant="outline" 
-                className="bg-white border-amber-400 text-amber-900 text-xs"
-                onClick={() => {
-                  setSelectedPatient(possibleDuplicate);
-                  setIsRegisterOpen(false);
-                }}
-              >
-                Open Existing Patient Record ({possibleDuplicate.mrn})
-              </Button>
+          <form onSubmit={handleRegisterSubmit} className="space-y-4 pt-2">
+            <div>
+              <label className="block text-xs font-semibold text-neutral-700 mb-1">Full Name *</label>
+              <Input
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="e.g. Amina Bello"
+                className="h-10 rounded-xl border-neutral-200"
+                required
+              />
             </div>
-          )}
 
-          <form onSubmit={handleRegisterSubmit} className="space-y-4 text-xs">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              <div>
-                <label className="font-medium text-slate-700 dark:text-slate-300">Full Name *</label>
-                <Input 
-                  required 
-                  placeholder="e.g. Chidi Kenneth Okafor" 
-                  value={formData.fullName} 
-                  onChange={(e) => handleNameChange(e.target.value)} 
-                />
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-semibold text-neutral-700">Phone Number (+234 WhatsApp)</label>
+                {phone.trim().length > 6 && (
+                  <span
+                    className={`text-[11px] font-semibold ${
+                      phonePreview.isWhatsAppQualified ? 'text-blue-600' : 'text-amber-600'
+                    }`}
+                  >
+                    {phonePreview.isWhatsAppQualified
+                      ? `✓ WhatsApp Qualified (${phonePreview.display})`
+                      : 'Enter valid +234 mobile for WhatsApp'}
+                  </span>
+                )}
               </div>
+              <Input
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                placeholder="+234 803 123 4567 or 08031234567"
+                className="h-10 rounded-xl border-neutral-200"
+              />
+            </div>
 
+            <div className="grid grid-cols-3 gap-3">
               <div>
-                <label className="font-medium text-slate-700 dark:text-slate-300">Phone Number *</label>
-                <Input 
-                  required 
-                  placeholder="e.g. +234 802 334 9811" 
-                  value={formData.phone} 
-                  onChange={(e) => handlePhoneChange(e.target.value)} 
-                />
-              </div>
-
-              <div>
-                <label className="font-medium text-slate-700 dark:text-slate-300">Date of Birth</label>
-                <Input 
-                  type="date" 
-                  value={formData.dob} 
-                  onChange={(e) => setFormData(prev => ({ ...prev, dob: e.target.value }))} 
-                />
-              </div>
-
-              <div>
-                <label className="font-medium text-slate-700 dark:text-slate-300">Sex</label>
-                <select 
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs"
-                  value={formData.sex}
-                  onChange={(e) => setFormData(prev => ({ ...prev, sex: e.target.value as any }))}
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Gender</label>
+                <select
+                  value={gender}
+                  onChange={(e) => setGender(e.target.value as any)}
+                  className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-sm bg-white"
                 >
                   <option value="Male">Male</option>
                   <option value="Female">Female</option>
-                  <option value="Other">Other</option>
                 </select>
               </div>
-
               <div>
-                <label className="font-medium text-slate-700 dark:text-slate-300">Email Address</label>
-                <Input 
-                  type="email" 
-                  placeholder="patient@example.com" 
-                  value={formData.email} 
-                  onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))} 
-                />
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Date of Birth</label>
+                <Input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className="h-10 rounded-xl border-neutral-200" />
               </div>
-
               <div>
-                <label className="font-medium text-slate-700 dark:text-slate-300">Residential Address</label>
-                <Input 
-                  placeholder="City, State" 
-                  value={formData.address} 
-                  onChange={(e) => setFormData(prev => ({ ...prev, address: e.target.value }))} 
-                />
-              </div>
-
-              <div>
-                <label className="font-medium text-slate-700 dark:text-slate-300">Blood Group</label>
-                <select 
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs"
-                  value={formData.bloodGroup}
-                  onChange={(e) => setFormData(prev => ({ ...prev, bloodGroup: e.target.value as any }))}
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Blood Group</label>
+                <select
+                  value={bloodGroup}
+                  onChange={(e) => setBloodGroup(e.target.value)}
+                  className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-sm bg-white"
                 >
-                  <option value="O+">O+</option>
-                  <option value="O-">O-</option>
-                  <option value="A+">A+</option>
-                  <option value="A-">A-</option>
-                  <option value="B+">B+</option>
-                  <option value="B-">B-</option>
-                  <option value="AB+">AB+</option>
-                  <option value="AB-">AB-</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="font-medium text-slate-700 dark:text-slate-300">Genotype</label>
-                <select 
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-xs"
-                  value={formData.genotype}
-                  onChange={(e) => setFormData(prev => ({ ...prev, genotype: e.target.value as any }))}
-                >
-                  <option value="AA">AA</option>
-                  <option value="AS">AS</option>
-                  <option value="SS">SS</option>
-                  <option value="AC">AC</option>
+                  {['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((bg) => (
+                    <option key={bg} value={bg}>{bg}</option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            <div className="border-t border-slate-200 dark:border-slate-800 pt-3">
-              <h4 className="font-semibold text-slate-800 dark:text-slate-200 mb-2">Clinical History & HMO</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="font-medium text-slate-700 dark:text-slate-300">Known Allergies (Comma-separated)</label>
-                  <Input 
-                    placeholder="e.g. Penicillin, Sulfa, Peanuts" 
-                    value={formData.allergies} 
-                    onChange={(e) => setFormData(prev => ({ ...prev, allergies: e.target.value }))} 
-                  />
-                </div>
-
-                <div>
-                  <label className="font-medium text-slate-700 dark:text-slate-300">HMO Provider Name</label>
-                  <Input 
-                    placeholder="e.g. Hygeia HMO, Reliance HMO" 
-                    value={formData.hmoProvider} 
-                    onChange={(e) => setFormData(prev => ({ ...prev, hmoProvider: e.target.value }))} 
-                  />
-                </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Allergies</label>
+                <Input
+                  value={allergiesText}
+                  onChange={(e) => setAllergiesText(e.target.value)}
+                  placeholder="Penicillin, Sulfa..."
+                  className="h-10 rounded-xl border-neutral-200"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1">Chronic Conditions</label>
+                <Input
+                  value={chronicText}
+                  onChange={(e) => setChronicText(e.target.value)}
+                  placeholder="Hypertension, Diabetes..."
+                  className="h-10 rounded-xl border-neutral-200"
+                />
               </div>
             </div>
 
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setIsRegisterOpen(false)}>Cancel</Button>
-              <Button type="submit" className="bg-sky-600 hover:bg-sky-500 text-white gap-2">
-                <Check className="w-4 h-4" /> Confirm Patient Registration
+            <div className="flex justify-end gap-2 pt-2">
+              <Button type="button" variant="outline" onClick={() => setIsRegisterOpen(false)} className="rounded-xl">
+                Cancel
               </Button>
-            </DialogFooter>
+              <Button type="submit" className="rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold px-6">
+                Save Patient
+              </Button>
+            </div>
           </form>
         </DialogContent>
       </Dialog>

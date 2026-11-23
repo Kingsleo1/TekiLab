@@ -25,7 +25,10 @@ import {
   Check,
   ExternalLink,
   MessageSquare,
-  Sliders
+  Sliders,
+  List,
+  LayoutGrid,
+  ChevronRight
 } from 'lucide-react';
 import { Html5QrcodeScanner } from 'html5-qrcode';
 import { toast } from 'sonner';
@@ -46,6 +49,8 @@ import {
   RapidResultDispatchRecord
 } from '../../types/tekilab';
 import { useTenantModules } from '../../context/TenantModuleContext';
+import { useNotifications } from '../../context/NotificationContext';
+import { normalizeNigerianWhatsAppPhone, TekiLabDepartment } from '../../config/roles';
 import { handoffLabResultToPharmacyQueue } from '../../lib/cross-module-handoff';
 import { generateLabReportPDF } from '../../lib/reporting-utils';
 
@@ -320,12 +325,17 @@ export function RapidResultConsole({
   companyLogo = '/logo.png?v=5'
 }: RapidResultConsoleProps) {
   const { config, isModuleEnabled } = useTenantModules();
+  const { notifyTransfer, notifyOrderArrival } = useNotifications();
   const isPharmacyActive = isModuleEnabled('pharmacy');
 
   // Stepper & SLA Timer
   const [step, setStep] = useState<WorkflowStep>(1);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
   const [timerActive, setTimerActive] = useState<boolean>(true);
+  const [panelViewMode, setPanelViewMode] = useState<'list' | 'grid'>('list');
+  const [panelSearch, setPanelSearch] = useState<string>('');
+  const [orderSource, setOrderSource] = useState<'WALK_IN' | 'ONLINE'>('WALK_IN');
+  const [whatsappWarningMsg, setWhatsappWarningMsg] = useState<string | null>(null);
 
   // Step 1: Registration
   const [patientSearch, setPatientSearch] = useState('');
@@ -626,12 +636,20 @@ export function RapidResultConsole({
       }
 
       setTimerActive(false);
+      setWhatsappWarningMsg(json.whatsappWarning || null);
       setDispatchResult({
         pdfReportNumber: json.pdfReportNumber,
         whatsappUrl: json.whatsappUrl,
         slaMet: json.slaMet,
         turnaroundSeconds: Math.max(elapsedSeconds, 45)
       });
+
+      if (json.whatsappWarning) {
+        toast.warning('WhatsApp Delivery Notice', {
+          description: json.whatsappWarning,
+          duration: 7000
+        });
+      }
 
       // Persist to lab worklist & local history
       const mappedResults: Record<string, { value: string; flag: RapidLabParameter['flag'] }> = {};
@@ -954,13 +972,42 @@ export function RapidResultConsole({
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">WhatsApp / Phone Number</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-neutral-700">WhatsApp / Phone Number (+234)</label>
+                  {patientPhone.trim().length > 6 && (
+                    <span className={`text-[11px] font-semibold ${normalizeNigerianWhatsAppPhone(patientPhone).isWhatsAppQualified ? 'text-blue-600' : 'text-amber-600'}`}>
+                      {normalizeNigerianWhatsAppPhone(patientPhone).isWhatsAppQualified ? '✓ +234 WhatsApp Qualified' : 'Check +234 mobile'}
+                    </span>
+                  )}
+                </div>
                 <Input
                   value={patientPhone}
                   onChange={(e) => setPatientPhone(e.target.value)}
-                  placeholder="0803 123 4567"
+                  placeholder="+234 803 123 4567"
                   className="h-10 rounded-xl border-neutral-200"
                 />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Order Source</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {(['WALK_IN', 'ONLINE'] as const).map((src) => (
+                    <button
+                      key={src}
+                      type="button"
+                      onClick={() => setOrderSource(src)}
+                      className={`h-9 rounded-xl text-xs font-semibold border cursor-pointer transition-colors ${
+                        orderSource === src
+                          ? src === 'ONLINE'
+                            ? 'bg-blue-600 text-white border-blue-600'
+                            : 'bg-neutral-950 text-white border-neutral-950'
+                          : 'bg-white text-neutral-600 border-neutral-200'
+                      }`}
+                    >
+                      {src === 'ONLINE' ? 'Online Booking' : 'Walk-In Client'}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <div>
@@ -978,44 +1025,98 @@ export function RapidResultConsole({
           {/* Rapid Panel Picker Card */}
           <div className="lg:col-span-7 bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xs">
             <div className="space-y-4">
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div>
-                  <h2 className="text-base font-bold text-neutral-950">Select Pre-Configured Rapid Test Panel</h2>
-                  <p className="text-xs text-neutral-500">10 ISO-ready rapid diagnostic panels with built-in reference ranges</p>
+                  <h2 className="text-base font-bold text-neutral-950">Select Rapid Test Panel</h2>
+                  <p className="text-xs text-neutral-500">Clean list view by default — switch to grid anytime</p>
                 </div>
-                <span className="text-xs font-mono px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 font-semibold">
-                  {selectedPanel.targetTatMinutes}m target
-                </span>
+                <div className="inline-flex items-center p-1 rounded-xl bg-neutral-100 border border-neutral-200 self-start">
+                  <button
+                    type="button"
+                    onClick={() => setPanelViewMode('list')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                      panelViewMode === 'list' ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
+                    }`}
+                  >
+                    <List className="w-3.5 h-3.5" />
+                    List
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPanelViewMode('grid')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer ${
+                      panelViewMode === 'grid' ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
+                    }`}
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                    Grid
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                {RAPID_TEST_PANELS.map((panel) => {
-                  const active = panel.id === selectedPanelId;
-                  return (
-                    <button
-                      key={panel.id}
-                      type="button"
-                      onClick={() => handleSelectPanel(panel)}
-                      className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer ${
-                        active
-                          ? 'bg-blue-50/70 border-blue-600 ring-1 ring-blue-600'
-                          : 'bg-white border-neutral-200 hover:border-neutral-400'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className={`text-[11px] font-mono font-bold ${active ? 'text-blue-700' : 'text-neutral-500'}`}>
-                          {panel.code}
-                        </span>
-                        <span className="text-[10px] font-medium text-neutral-500">{panel.category}</span>
-                      </div>
-                      <div className="text-sm font-semibold text-neutral-950 leading-snug">{panel.name}</div>
-                      <div className="text-[11px] text-neutral-500 mt-1">
-                        {panel.sampleType} · {panel.tubeColor}
-                      </div>
-                    </button>
-                  );
-                })}
+              <div className="relative">
+                <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <Input
+                  value={panelSearch}
+                  onChange={(e) => setPanelSearch(e.target.value)}
+                  placeholder="Search rapid test panels..."
+                  className="pl-10 h-10 bg-neutral-50 border-neutral-200 rounded-xl text-sm"
+                />
               </div>
+
+              {panelViewMode === 'list' ? (
+                <div className="border border-neutral-200 rounded-xl divide-y divide-neutral-100 max-h-[340px] overflow-y-auto">
+                  {RAPID_TEST_PANELS.filter((p) =>
+                    !panelSearch.trim() ||
+                    p.name.toLowerCase().includes(panelSearch.toLowerCase()) ||
+                    p.code.toLowerCase().includes(panelSearch.toLowerCase())
+                  ).map((panel) => {
+                    const active = panel.id === selectedPanelId;
+                    return (
+                      <button
+                        key={panel.id}
+                        type="button"
+                        onClick={() => handleSelectPanel(panel)}
+                        className={`w-full px-4 py-3 flex items-center justify-between text-left transition-colors cursor-pointer ${
+                          active ? 'bg-blue-50 text-blue-700 font-bold' : 'bg-white text-neutral-900 hover:bg-neutral-50 font-medium'
+                        }`}
+                      >
+                        <span className="text-sm">{panel.name}</span>
+                        {active ? (
+                          <Check className="w-4 h-4 text-blue-600 shrink-0" />
+                        ) : (
+                          <ChevronRight className="w-4 h-4 text-neutral-300 shrink-0" />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto">
+                  {RAPID_TEST_PANELS.filter((p) =>
+                    !panelSearch.trim() ||
+                    p.name.toLowerCase().includes(panelSearch.toLowerCase()) ||
+                    p.code.toLowerCase().includes(panelSearch.toLowerCase())
+                  ).map((panel) => {
+                    const active = panel.id === selectedPanelId;
+                    return (
+                      <button
+                        key={panel.id}
+                        type="button"
+                        onClick={() => handleSelectPanel(panel)}
+                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                          active
+                            ? 'bg-blue-50/70 border-blue-600 text-blue-700 font-bold'
+                            : 'bg-white border-neutral-200 text-neutral-900 hover:border-neutral-400 font-medium'
+                        }`}
+                      >
+                        <span className="text-sm leading-snug">{panel.name}</span>
+                        {active && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
 
             <div className="pt-4 border-t border-neutral-100 flex items-center justify-between gap-4">

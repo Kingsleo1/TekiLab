@@ -1,5 +1,5 @@
-const CACHE_NAME = 'tekilab-lims-pwa-v7';
-const STATIC_CACHE_NAME = 'tekilab-lims-static-v7';
+const CACHE_NAME = 'tekilab-lims-pwa-v8';
+const STATIC_CACHE_NAME = 'tekilab-lims-static-v8';
 
 const ASSETS_TO_PRECACHE = [
   '/',

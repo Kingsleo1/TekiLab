@@ -733,9 +733,28 @@ export function LoginPage({
           )}
         </AnimatePresence>
 
-        {/* Downward Small Link: "Login as admin" */}
+        {/* Downward Small Links: Patient Portal & Admin */}
         {authMode !== 'admin' && (
-          <div className="mt-8 pt-4 border-t border-white/10 text-center">
+          <div className="mt-8 pt-4 border-t border-white/10 flex flex-col sm:flex-row items-center justify-center gap-4 text-center">
+            <button
+              type="button"
+              onClick={() => {
+                onLogin('cashier', {
+                  id: 'pat-portal-demo',
+                  name: 'Chinedu Okafor',
+                  email: 'chinedu.okafor@tekilab.io',
+                  role: 'Patient (Portal Account)',
+                  department: 'Patient Portal',
+                  mrn: 'TK-PAT-10421'
+                });
+                toast.success('Signed into TekiLab Patient Portal');
+              }}
+              className="text-xs text-blue-400 hover:text-blue-300 font-semibold transition-colors cursor-pointer inline-flex items-center gap-1.5"
+            >
+              <UserIcon className="w-3.5 h-3.5" />
+              <span>Patient Portal (Results &amp; Online Booking)</span>
+            </button>
+            <span className="hidden sm:inline text-slate-700">·</span>
             <button
               type="button"
               onClick={() => {
