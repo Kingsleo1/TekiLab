@@ -970,7 +970,7 @@ function AppShell() {
   const activeCollapsedIcon = hasCustomCompanyLogo ? activeTenant!.logo! : '/favicon.png?v=5';
 
   return (
-    <div className="h-screen w-full max-w-full overflow-hidden bg-white flex font-sans selection:bg-blue-100 selection:text-blue-900">
+    <div className="h-dvh w-full max-w-full overflow-hidden bg-slate-50 flex font-sans selection:bg-blue-100 selection:text-blue-900">
       <Toaster position="top-right" richColors />
       
       {/* Sidebar Navigation */}
@@ -978,8 +978,8 @@ function AppShell() {
         {true && (
           <motion.aside 
             initial={{ x: -300 }}
-            animate={{ x: 0, width: isSidebarOpen ? 280 : 96 }}
-            className="bg-[#0F172A] hidden md:flex flex-col z-50 sticky top-0 h-screen transition-all shadow-2xl border-r border-slate-800 shrink-0"
+            animate={{ x: 0, width: isSidebarOpen ? 248 : 72 }}
+            className="bg-[#0F172A] hidden md:flex flex-col z-50 sticky top-0 h-dvh transition-all shadow-sm border-r border-slate-800 shrink-0"
           >
             <div className="p-3 shrink-0 border-b border-slate-800/80">
               {isSidebarOpen ? (
@@ -1128,13 +1128,13 @@ function AppShell() {
       </AnimatePresence>
 
       {/* Main Workspace */}
-      <main className="flex-1 min-w-0 flex flex-col relative h-screen max-w-full overflow-hidden">
+      <main className="flex-1 min-w-0 flex flex-col relative h-dvh max-w-full overflow-hidden">
         {/* PWA Network & Sync Status Banner */}
         <PWAStatusBanner onOpenInstallModal={() => pwa.setShowInstallModal(true)} />
 
         {/* Top Header Bar */}
         {true && (
-          <header className="h-16 md:h-18 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-2.5 sm:px-4 md:px-6 flex items-center justify-between sticky top-0 z-40 w-full min-w-0 shrink-0">
+          <header className="h-14 md:h-16 bg-white/95 backdrop-blur-md border-b border-slate-200/80 px-2.5 sm:px-4 md:px-6 flex items-center justify-between sticky top-0 z-40 w-full min-w-0 shrink-0">
             <div className="flex items-center gap-1.5 sm:gap-3 md:gap-4 min-w-0 shrink">
               {true && (
                 <>
