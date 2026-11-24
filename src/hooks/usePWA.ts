@@ -79,12 +79,7 @@ export function usePWA() {
     const hasDismissed = localStorage.getItem('maniso_pwa_dismissed') === 'true' ||
       localStorage.getItem('tekipharm_pwa_dismissed') === 'true';
 
-    if (!standaloneMode && !previouslyInstalled && !hasDismissed) {
-      const timer = setTimeout(() => {
-        setShowInstallModal(true);
-      }, 1500);
-      return () => clearTimeout(timer);
-    }
+    // Installation is available from Install App without interrupting clinical entry.
   }, []);
 
   // Listen for beforeinstallprompt event (Chromium, Edge, Chrome on Windows/Android)

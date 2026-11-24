@@ -468,6 +468,7 @@ export interface PrescribedMedication {
 }
 
 export interface ClinicalEncounter {
+  reportApproval?: import('../lib/report-approval').ReportApproval;
   id: string;
   patientId: string;
   patientName: string;
@@ -536,6 +537,9 @@ export interface LabTestCatalogItem {
 }
 
 export interface LabOrder {
+  findingsHtml?: string;
+  reportApproval?: import('../lib/report-approval').ReportApproval;
+  pricingStatus?: 'Quoted' | 'Unquoted';
   id: string;
   patientId: string;
   patientName: string;
@@ -590,6 +594,8 @@ export interface ImagingTestCatalogItem {
 }
 
 export interface ImagingOrder {
+  findingsHtml?: string;
+  reportApproval?: import('../lib/report-approval').ReportApproval;
   id: string;
   patientId: string;
   patientName: string;

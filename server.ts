@@ -1,4 +1,7 @@
 import express from 'express';
+import { createHash } from 'node:crypto';
+import { buildMeasuredReview, validateDispatch } from './src/lib/rapid-review';
+const previewMode = process.env.TEKILAB_PREVIEW_MODE !== 'false';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
@@ -25,41 +28,7 @@ function getGeminiClient(): GoogleGenAI {
 const tenantConfigStore = new Map<string, any>();
 const labResultsStore = new Map<string, any>();
 const pharmacyHandoffQueueStore: any[] = [];
-const instrumentWebhookInbox: any[] = [
-  {
-    packetId: 'INST-PKT-9041',
-    instrumentId: 'SYS-XN550-01',
-    instrumentModel: 'Sysmex XN-550 Hematology Analyzer',
-    accessionNumber: 'ACC-2026-9041',
-    sampleBarcode: 'TLAB-9041-EDTA',
-    patientName: 'Chinedu Okafor',
-    testName: 'Complete Blood Count (CBC) + Malaria Parasite',
-    parameters: [
-      { name: 'Hemoglobin (Hb)', value: '9.4', unit: 'g/dL', referenceRange: '13.0 - 17.0', flag: 'Low' },
-      { name: 'White Blood Cell (WBC)', value: '14.8', unit: 'x10^9/L', referenceRange: '4.0 - 11.0', flag: 'High' },
-      { name: 'Platelets', value: '112', unit: 'x10^9/L', referenceRange: '150 - 450', flag: 'Low' },
-      { name: 'Malaria Parasite (P. falciparum)', value: 'Positive (+++)', unit: 'Trophozoites', referenceRange: 'Negative', flag: 'Positive' }
-    ],
-    receivedAt: new Date(Date.now() - 95 * 1000).toISOString(),
-    consumed: false
-  },
-  {
-    packetId: 'INST-PKT-9042',
-    instrumentId: 'ROCHE-C311-02',
-    instrumentModel: 'Roche Cobas c 311 Clinical Chemistry',
-    accessionNumber: 'ACC-2026-9042',
-    sampleBarcode: 'TLAB-9042-FLOX',
-    patientName: 'Amina Bello',
-    testName: 'Fasting Blood Glucose & HbA1c Metabolic Panel',
-    parameters: [
-      { name: 'Fasting Blood Glucose', value: '214', unit: 'mg/dL', referenceRange: '70 - 99', flag: 'Critical' },
-      { name: 'HbA1c', value: '8.6', unit: '%', referenceRange: '4.0 - 5.6', flag: 'High' },
-      { name: 'Serum Creatinine', value: '0.92', unit: 'mg/dL', referenceRange: '0.60 - 1.20', flag: 'Normal' }
-    ],
-    receivedAt: new Date(Date.now() - 42 * 1000).toISOString(),
-    consumed: false
-  }
-];
+const instrumentWebhookInbox: any[] = [];
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -528,7 +497,22 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json({ limit: '50mb' }));
+  app.disable('x-powered-by');
+  app.use((req, res, next) => {
+    if (previewMode) {
+      res.setHeader('X-TekiLab-Mode', 'local-preview');
+      res.setHeader('Content-Security-Policy', "connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-ancestors 'none'; base-uri 'self'");
+      res.setHeader('Referrer-Policy', 'no-referrer');
+      if (!/^(localhost|127\.0\.0\.1)(:3000)?$/.test(req.headers.host || '')) return res.status(403).json({ error: 'Local preview accepts localhost requests only.' });
+      const origin = req.headers.origin;
+      if (origin && !['http://localhost:3000', 'http://127.0.0.1:3000'].includes(origin)) return res.status(403).json({ error: 'Cross-origin preview access denied.' });
+      if (req.path.startsWith('/api/astra/')) return res.status(423).json({ error: 'Astra operations are held pending explicit approval.' });
+    }
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    next();
+  });
+  app.use(express.json({ limit: '1mb' }));
+  app.get('/api/preview/status', (_req, res) => res.json({ previewMode, databaseWrites: !previewMode, externalAI: !previewMode }));
 
   // 1. Check Astra DB Connection Status
   app.get('/api/astra/status', async (req, res) => {
@@ -819,6 +803,7 @@ async function startServer() {
 
   // Helper to optionally mirror a row into DataStax Astra DB when configured
   async function mirrorRowToAstra(req: express.Request, table: string, row: Record<string, any>) {
+    if (previewMode) return false;
     const creds = resolveAstraCredentials(req);
     if (!creds.isConfigured || !row.id) return false;
     try {
@@ -985,135 +970,10 @@ async function startServer() {
         chronicConditions: Array.isArray(patient?.chronicConditions) ? patient.chronicConditions.slice(0, 15).map(String) : []
       };
 
-      const hasGeminiKey = Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
+      const hasGeminiKey = !previewMode && Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY !== 'MY_GEMINI_API_KEY');
 
-      if (!hasGeminiKey) {
-        // Deterministic ISO-15189 Clinical Rule Engine fallback when GEMINI_API_KEY is not configured
-        const flagged = cleanParams.filter((p: any) =>
-          ['High', 'Low', 'Critical', 'Positive'].includes(p.flag)
-        );
-        const hasCritical = cleanParams.some((p: any) => p.flag === 'Critical');
-        const severity: 'normal' | 'attention' | 'critical' = hasCritical
-          ? 'critical'
-          : flagged.length > 0
-            ? 'attention'
-            : 'normal';
-
-        const joined = `${testName} ${cleanParams.map((p: any) => `${p.name}:${p.value}:${p.flag}`).join(' ')}`.toLowerCase();
-        const allergies = (patientContext.allergies || []).map((a: string) => a.toLowerCase());
-
-        let likelyDiagnosis = 'Normal Physiological Reference Values (Auto-Verifiable)';
-        let clinicalSummary =
-          'All measured diagnostic parameters fall strictly within biological reference intervals. Eligible for autonomous auto-verification.';
-        let aiSuggestedDrug: any = null;
-
-        if (joined.includes('malaria') && flagged.some((f: any) => f.name.toLowerCase().includes('malaria') || f.flag === 'Positive')) {
-          likelyDiagnosis = 'Acute Plasmodium falciparum Malaria (Confirmed Rapid Positive)';
-          clinicalSummary =
-            'Positive malaria parasitemia detected. Immediate first-line artemisinin-based combination therapy (ACT) is indicated alongside hydration and antipyretic support.';
-          aiSuggestedDrug = {
-            drugName: 'Artemether-Lumefantrine (Coartem 80/480mg)',
-            genericName: 'Artemether / Lumefantrine',
-            dosage: '80mg / 480mg',
-            frequency: 'Twice daily (0h, 8h, 24h, 36h, 48h, 60h)',
-            durationDays: 3,
-            quantity: 6,
-            rationale: 'WHO first-line ACT protocol for uncomplicated P. falciparum malaria.',
-            contraindicationCheck: allergies.some((a: string) => a.includes('artem'))
-              ? 'ALERT: Patient allergy flagged — consult physician for quinine/doxycycline alternative.'
-              : 'Cleared against listed patient allergies; take with fatty meal for optimal absorption.'
-          };
-        } else if (joined.includes('glucose') || joined.includes('hba1c')) {
-          if (flagged.length > 0) {
-            likelyDiagnosis = hasCritical
-              ? 'Severe Hyperglycemia / Uncontrolled Diabetes Mellitus (Critical Alert)'
-              : 'Elevated Glycemic Profile — Impaired Fasting Glucose / Type 2 Diabetes';
-            clinicalSummary =
-              'Elevated glycemic markers detected outside normal fasting targets. Correlate clinically for diabetic ketoacidosis if symptomatic and review glycemic therapy.';
-            aiSuggestedDrug = {
-              drugName: 'Metformin HCl XR 500mg',
-              genericName: 'Metformin Hydrochloride',
-              dosage: '500mg',
-              frequency: 'Once daily with evening meal',
-              durationDays: 30,
-              quantity: 30,
-              rationale: 'First-line oral antihyperglycemic agent for elevated fasting glucose & HbA1c.',
-              contraindicationCheck: 'Verify eGFR > 30 mL/min/1.73m² before initiating Metformin.'
-            };
-          }
-        } else if (joined.includes('typhoid') || joined.includes('widal')) {
-          if (flagged.length > 0) {
-            likelyDiagnosis = 'Enteric Fever / Salmonella Typhi Reactive Titre';
-            clinicalSummary =
-              'Significant Salmonella O/H antibody reactivity detected. Recommend targeted antimicrobial therapy and oral rehydration.';
-            aiSuggestedDrug = {
-              drugName: allergies.some((a: string) => a.includes('cipro') || a.includes('fluoro'))
-                ? 'Azithromycin 500mg'
-                : 'Ciprofloxacin 500mg',
-              genericName: allergies.some((a: string) => a.includes('cipro') || a.includes('fluoro'))
-                ? 'Azithromycin'
-                : 'Ciprofloxacin',
-              dosage: '500mg',
-              frequency: 'Twice daily',
-              durationDays: 7,
-              quantity: 14,
-              rationale: 'Targeted antimicrobial coverage for acute enteric fever.',
-              contraindicationCheck: 'Screened against patient allergy list; complete full course.'
-            };
-          }
-        } else if (joined.includes('urine') || joined.includes('nitrite') || joined.includes('leukocyte')) {
-          if (flagged.length > 0) {
-            likelyDiagnosis = 'Acute Bacterial Urinary Tract Infection (Pyuria / Nitrite Positive)';
-            clinicalSummary =
-              'Urinalysis shows positive inflammatory/bacterial markers consistent with acute UTI. Initiate empirical urinary antimicrobial therapy.';
-            aiSuggestedDrug = {
-              drugName: 'Nitrofurantoin Macrocrystals 100mg',
-              genericName: 'Nitrofurantoin',
-              dosage: '100mg',
-              frequency: 'Twice daily with food',
-              durationDays: 5,
-              quantity: 10,
-              rationale: 'First-line narrow-spectrum therapy for uncomplicated urinary tract infection.',
-              contraindicationCheck: 'Contraindicated if eGFR < 30 mL/min; cleared for standard adult dosing.'
-            };
-          }
-        } else if (flagged.length > 0) {
-          likelyDiagnosis = hasCritical
-            ? `Critical Diagnostic Deviation in ${testName}`
-            : `Abnormal Diagnostic Markers in ${testName}`;
-          clinicalSummary = `${flagged.length} parameter(s) deviated outside reference intervals (${flagged.map((f: any) => `${f.name}: ${f.value}`).join(', ')}). Pathologist review and targeted clinical follow-up recommended.`;
-          aiSuggestedDrug = {
-            drugName: 'Clinical Supportive / Physician Review Order',
-            genericName: 'Targeted Therapy Pending Clinician Confirmation',
-            dosage: 'Per Protocol',
-            frequency: 'As directed',
-            durationDays: 5,
-            quantity: 1,
-            rationale: `Generated from flagged ${testName} panel findings.`,
-            contraindicationCheck: 'Requires attending clinician confirmation against full patient chart.'
-          };
-        }
-
-        return res.json({
-          success: true,
-          analysis: {
-            anomalyDetected: flagged.length > 0,
-            severity,
-            likelyDiagnosis,
-            clinicalSummary,
-            flaggedParameters: flagged.map((f: any) => ({
-              parameter: f.name,
-              value: `${f.value} ${f.unit || ''}`.trim(),
-              referenceRange: f.referenceRange || 'See SOP',
-              deviation: f.flag,
-              clinicalNote: `${f.name} measured ${f.value} ${f.unit || ''} (${f.flag} vs. ${f.referenceRange || 'reference'}).`
-            })),
-            aiSuggestedDrug,
-            checkedAt: new Date().toISOString(),
-            model: 'tekilab-clinical-rules-v1 (offline-ready)'
-          }
-        });
-      }
+      if (cleanParams.some((p: any) => !p.name.trim() || !p.value.trim())) return res.status(400).json({ error: 'Every measured parameter is required.' });
+      if (!hasGeminiKey) return res.json({ success: true, analysis: buildMeasuredReview(cleanParams) });
 
       const ai = getGeminiClient();
       const prompt = [
@@ -1242,6 +1102,17 @@ async function startServer() {
   app.post('/api/lims/rapid-result/dispatch', async (req, res) => {
     try {
       const body = req.body || {};
+      const invalid = validateDispatch(body);
+      if (invalid) return res.status(400).json({ error: invalid });
+      let reviewed: any;
+      try { reviewed = JSON.parse(body.reportApproval.reportSnapshot); } catch { return res.status(400).json({ error: 'Invalid approval snapshot.' }); }
+      if (createHash('sha256').update(body.reportApproval.reportSnapshot).digest('hex') !== body.reportApproval.reportDigest ||
+          reviewed.sampleUid !== body.accessionNumber || reviewed.selectedPatientId !== body.patientId || reviewed.patientName !== body.patientName ||
+          reviewed.patientPhone !== body.patientPhone || JSON.stringify(reviewed.parameters) !== JSON.stringify(body.parameters) ||
+          reviewed.approvalNotes !== body.clinicalInterpretation || reviewed.custodyVerified !== true ||
+          JSON.stringify(reviewed.aiReport) !== JSON.stringify(body.aiAnomalyReport)) return res.status(409).json({ error: 'Report changed after approval. Review and sign again.' });
+      const duplicate = Array.from(labResultsStore.values()).find((r: any) => r.tenantId === body.tenantId && r.accessionNumber === body.accessionNumber);
+      if (duplicate) return res.json({ success: true, record: duplicate, pdfReportNumber: duplicate.whatsappDispatch.pdfReportNumber, whatsappUrl: duplicate.whatsappDispatch.whatsappUrl, slaMet: duplicate.whatsappDispatch.slaMet });
       const {
         tenantId = 'tenant-tekilab-01',
         accessionNumber,
@@ -1257,7 +1128,7 @@ async function startServer() {
         instrumentId,
         parameters = [],
         aiAnomalyReport,
-        validatedBy = 'TekiLab Lead Scientist',
+        validatedBy,
         turnaroundSeconds = 180
       } = body;
 
@@ -1278,10 +1149,10 @@ async function startServer() {
       // Flag obviously unregistered / landline / test non-WA numbers (e.g. ending in 0000 or non-mobile)
       const isWhatsAppRegistered =
         isValidNigerianMobile && !digits.endsWith('000000');
-      const whatsappWarning = isWhatsAppRegistered
+      const whatsappWarning = isValidNigerianMobile
         ? null
-        : `Number ${digits ? `+${digits}` : '(empty)'} is not registered on WhatsApp or does not match a valid +234 mobile line. The result has still been saved to the Patient Portal and PDF is ready.`;
-      if (!digits) digits = '2348031234567';
+        : 'A valid mobile number is required to prepare a WhatsApp link. Delivery and account registration have not been checked.';
+
 
       const pdfReportNumber = `TLAB-${new Date().getFullYear()}-${Math.floor(10000 + Math.random() * 90000)}`;
       const safeTurnaround = Math.max(1, Math.min(36000, Number(turnaroundSeconds) || 180));
@@ -1293,24 +1164,8 @@ async function startServer() {
         .map((p: any) => `• ${p.name}: ${p.value} ${p.unit || ''} (${p.flag || 'Normal'})`)
         .join('\n');
 
-      const waMessage = [
-        `*TEKILAB RAPID DIAGNOSTIC REPORT*`,
-        `Report No: ${pdfReportNumber}`,
-        `Accession: ${accessionNumber}`,
-        `Patient: ${patientName} (${patientMrn || patientId || 'N/A'})`,
-        `Test Panel: ${testName}`,
-        `Turnaround: ${Math.floor(safeTurnaround / 60)}m ${safeTurnaround % 60}s`,
-        '',
-        `*Key Readings:*`,
-        summaryLines || '• Parameters verified',
-        '',
-        `*Diagnostic Impression:* ${aiAnomalyReport?.likelyDiagnosis || 'Verified Reference Result'}`,
-        `*Clinical Notes:* ${aiAnomalyReport?.clinicalSummary || 'Validated by TekiLab Pathology.'}`,
-        '',
-        `Your official signed TekiLab PDF report (${pdfReportNumber}.pdf) is ready and verified.`
-      ].join('\n');
-
-      const whatsappUrl = `https://wa.me/${digits}?text=${encodeURIComponent(waMessage)}`;
+      const waMessage = 'Your laboratory report is ready. Please contact your diagnostic centre to receive it securely.';
+      const whatsappUrl = isValidNigerianMobile ? `https://wa.me/${digits}?text=${encodeURIComponent(waMessage)}` : '';
 
       const recordId = `lres-${Date.now()}-${Math.floor(100 + Math.random() * 900)}`;
       const record = {
@@ -1327,11 +1182,13 @@ async function startServer() {
         sampleType: String(sampleType),
         intakeSource,
         instrumentId: instrumentId ? String(instrumentId) : undefined,
-        status: 'DISPATCHED',
+        status: 'READY_FOR_DELIVERY',
+        reportApproval: body.reportApproval,
+        clinicalInterpretation: body.clinicalInterpretation,
         parameters,
         aiAnomalyReport,
         whatsappDispatch: {
-          dispatched: true,
+          dispatched: false,
           recipientPhone: `+${digits}`,
           pdfReportNumber,
           dispatchedAt,
@@ -1379,7 +1236,7 @@ async function startServer() {
         pdfReportNumber,
         whatsappUrl,
         whatsappQualified: isNigerian234,
-        whatsappRegistered: isWhatsAppRegistered,
+        whatsappRegistered: null,
         whatsappWarning,
         slaMet
       });
@@ -1391,6 +1248,7 @@ async function startServer() {
   // D. Diagnostic Instrument API Hub (Webhook Intake & Pull Inbox)
   app.post('/api/lims/instruments/webhook', (req, res) => {
     const configuredSecret = process.env.TEKILAB_INSTRUMENT_WEBHOOK_SECRET;
+    if (!previewMode && !configuredSecret) return res.status(503).json({ error: 'Instrument webhook authentication is not configured.' });
     if (configuredSecret) {
       const provided = String(req.headers['x-tekilab-webhook-secret'] || '');
       if (provided !== configuredSecret) {
@@ -1445,7 +1303,11 @@ async function startServer() {
       return res.status(400).json({ error: 'Valid handoff payload with patientId and aiSuggestedDrug is required.' });
     }
 
-    const tenantId = String(payload.tenantId || 'tenant-tekilab-01');
+    if (payload.source !== 'CLINICIAN_PRESCRIPTION' || !payload.prescriberId || !payload.prescriberName || !payload.prescribedAt) return res.status(400).json({ error: 'A clinician-approved prescription is required. AI suggestions cannot be dispensed.' });
+    const tenantId = String(payload.tenantId || '');
+    if (!tenantId) return res.status(400).json({ error: 'tenantId is required.' });
+    const existing = pharmacyHandoffQueueStore.find(i => i.handoffId === payload.handoffId && i.tenantId === tenantId);
+    if (existing) return res.json({ success: true, item: existing });
     const storedConfig = tenantConfigStore.get(tenantId);
     const isPharmacyActive = storedConfig ? Boolean(storedConfig.modules?.pharmacy) : Boolean(pharmacyEnabled);
 
@@ -1494,6 +1356,7 @@ async function startServer() {
 
   app.get('/api/lims/handoff/pharmacy', (req, res) => {
     const tenantId = req.query.tenantId ? String(req.query.tenantId) : '';
+    if (!tenantId) return res.status(400).json({ error: 'tenantId is required.' });
     const filtered = tenantId
       ? pharmacyHandoffQueueStore.filter((i) => i.tenantId === tenantId)
       : pharmacyHandoffQueueStore;
@@ -1506,7 +1369,12 @@ async function startServer() {
     if (!['QUEUED', 'LOADED_IN_POS', 'DISPENSED'].includes(status)) {
       return res.status(400).json({ error: 'Invalid status' });
     }
-    const target = pharmacyHandoffQueueStore.find((i) => i.handoffId === handoffId);
+      const tenantId = String(req.body?.tenantId || '');
+      if (!tenantId) return res.status(400).json({ error: 'tenantId is required.' });
+      const target = pharmacyHandoffQueueStore.find((i) => i.handoffId === handoffId && i.tenantId === tenantId);
+      if (!target) return res.status(404).json({ error: 'Handoff not found for this tenant.' });
+      const allowed: Record<string, string[]> = { QUEUED: ['LOADED_IN_POS'], LOADED_IN_POS: ['DISPENSED'], DISPENSED: [] };
+      if (target.status !== status && !allowed[target.status]?.includes(status)) return res.status(409).json({ error: 'Invalid pharmacy transition.' });
     if (target) {
       target.status = status;
     }
@@ -1515,6 +1383,7 @@ async function startServer() {
 
   // F. TekiLab Conversational AI Assistant (Protocols & Patient History Lookup)
   app.post('/api/lims/ai-assistant', async (req, res) => {
+    if (previewMode) return res.json({ answer: 'Local preview: external AI is disabled. Use measured-result review and obtain professional clinical review.', source: 'local-preview' });
     try {
       const { mode = 'protocol', query, patientContext, labHistory } = req.body || {};
       if (!query || typeof query !== 'string' || query.trim().length < 2) {
@@ -1580,8 +1449,8 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`[TekiLab LIMS Server] Listening on http://0.0.0.0:${PORT}`);
+  app.listen(PORT, previewMode ? '127.0.0.1' : '0.0.0.0', () => {
+    console.log(`[TekiLab LIMS Server] Listening on http://${previewMode ? 'localhost' : '0.0.0.0'}:${PORT} (${previewMode ? 'local preview; Astra and external AI disabled' : 'server mode'})`);
   });
 }
 

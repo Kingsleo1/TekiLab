@@ -1,4 +1,9 @@
 import { useState } from 'react';
+import { FindingsEditor } from './FindingsEditor';
+import { ReportSignature } from './ReportSignature';
+import { ReportApproval, approvalMatches, canApproveReport } from '../../lib/report-approval';
+import { textToFindings } from '../../lib/findings';
+
 import { 
   FileSearch, 
   Search, 
@@ -36,7 +41,7 @@ export function RadiologyView({
   currentUser
 }: RadiologyViewProps) {
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedOrder, setSelectedOrder] = useState<ImagingOrder | null>(imagingOrders[0] || null);
+  const [selectedOrder, setSelectedOrder] = useState<ImagingOrder | null>(null);
 
   const [clinicalIndication, setClinicalIndication] = useState('');
   const [techniqueNotes, setTechniqueNotes] = useState('');
@@ -44,6 +49,9 @@ export function RadiologyView({
   const [impressionNotes, setImpressionNotes] = useState('');
   const [recommendationsNotes, setRecommendationsNotes] = useState('');
   const [isPreviewPdfOpen, setIsPreviewPdfOpen] = useState(false);
+  const [findingsHtml, setFindingsHtml] = useState('');
+  const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
+  const reportSnapshot = JSON.stringify({ id: selectedOrder?.id, patientId: selectedOrder?.patientId, clinicalIndication, techniqueNotes, findingsNotes, impressionNotes, recommendationsNotes, findingsHtml });
 
   const filteredOrders = imagingOrders.filter(o => 
     o.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -53,6 +61,8 @@ export function RadiologyView({
 
   const handleSelectOrder = (order: ImagingOrder) => {
     setSelectedOrder(order);
+    setReportApproval(null);
+    setFindingsHtml(order.findingsHtml || textToFindings(order.findingsNotes || ''));
     setClinicalIndication(order.clinicalIndication || '');
     setTechniqueNotes(order.techniqueNotes || '');
     setFindingsNotes(order.findingsNotes || '');
@@ -62,6 +72,7 @@ export function RadiologyView({
 
   const handleApproveAndRelease = () => {
     if (!selectedOrder) return;
+    if (selectedOrder.orderStatus === 'Released' || !canApproveReport(currentUser, false, true) || !approvalMatches(reportApproval, reportSnapshot, currentUser)) { toast.error('An authorized reviewer must sign this specific report before release.'); return; }
 
     if (!findingsNotes.trim() || !impressionNotes.trim() || !(currentUser?.displayName || currentUser?.name)) {
       toast.error('Enter findings and conclusion and sign in before approving.');
@@ -71,6 +82,8 @@ export function RadiologyView({
     const updated: ImagingOrder = {
       ...selectedOrder,
       orderStatus: 'Released',
+      findingsHtml,
+      reportApproval: reportApproval!,
       clinicalIndication,
       techniqueNotes,
       findingsNotes,
@@ -184,12 +197,7 @@ export function RadiologyView({
 
                 <div>
                   <label className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Findings *</label>
-                  <textarea 
-                    className="w-full min-h-[100px] p-3 rounded-lg border border-input bg-background text-xs"
-                    placeholder="Detailed radiological observations across anatomical sites..."
-                    value={findingsNotes}
-                    onChange={(e) => setFindingsNotes(e.target.value)}
-                  />
+                  <FindingsEditor label="Radiology findings" value={findingsHtml} readOnly={selectedOrder.orderStatus === 'Released'} onChange={(html, text) => { setFindingsHtml(html); setFindingsNotes(text); }} />
                 </div>
 
                 <div>
@@ -201,6 +209,7 @@ export function RadiologyView({
                     onChange={(e) => setImpressionNotes(e.target.value)}
                   />
                 </div>
+                {selectedOrder.orderStatus !== 'Released' && <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, false, true) && Boolean(findingsNotes.trim() && impressionNotes.trim())} onApprove={setReportApproval} />}
               </CardContent>
             </Card>
           ) : (
@@ -255,13 +264,14 @@ export function RadiologyView({
           <DialogFooter>
             <Button variant="outline" onClick={() => setIsPreviewPdfOpen(false)}>Close</Button>
             <Button 
+              disabled={selectedOrder?.orderStatus !== 'Released' || !selectedOrder?.reportApproval}
               onClick={() => {
-                if (selectedOrder) {
+                if (selectedOrder?.orderStatus === 'Released' && selectedOrder.reportApproval) {
                   const pat = patients.find(p => p.id === selectedOrder.patientId || p.mrn === selectedOrder.mrn);
                   generateRadiologyReportPDF({
                     ...selectedOrder,
-                    findings: findingsNotes || selectedOrder.findingsNotes,
-                    impression: impressionNotes || selectedOrder.impressionNotes
+                    findings: selectedOrder.findingsNotes,
+                    impression: selectedOrder.impressionNotes
                   }, pat);
                   toast.success('Downloading official radiology diagnostic PDF report with Teki Med logo...');
                 }

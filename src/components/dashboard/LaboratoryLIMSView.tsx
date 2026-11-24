@@ -1,4 +1,9 @@
 import React, { useState } from 'react';
+import { FindingsEditor } from './FindingsEditor';
+import { ReportSignature } from './ReportSignature';
+import { ReportApproval, approvalMatches, canApproveReport } from '../../lib/report-approval';
+import { textToFindings } from '../../lib/findings';
+
 import { 
   FlaskConical, 
   Search, 
@@ -88,6 +93,10 @@ export function LaboratoryLIMSView({
   const [customIssueText, setCustomIssueText] = useState('');
   const [clinicalInterpretation, setClinicalInterpretation] = useState('');
   const [isPreviewPdfOpen, setIsPreviewPdfOpen] = useState(false);
+  const [findingsHtml, setFindingsHtml] = useState('');
+  const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
+  const reportSnapshot = JSON.stringify({ id: selectedOrder?.id, patientId: selectedOrder?.patientId, resultValues, template: labCatalog.find(c => c.id === selectedOrder?.testId)?.parameters, clinicalInterpretation, findingsHtml, likelyIssue, customIssueText, isCustomIssueMode });
+  const critical = Object.values(resultValues).some((v: any) => v.flag === 'Critical');
 
   const filteredOrders = labOrders.filter(order => {
     const matchesFilter = activeFilter === 'ALL' || order.orderStatus === activeFilter;
@@ -101,10 +110,12 @@ export function LaboratoryLIMSView({
 
   const handleSelectOrder = (order: LabOrder) => {
     setSelectedPatientOrder(order);
+    setReportApproval(null);
+    setFindingsHtml(order.findingsHtml || textToFindings(order.clinicalInterpretation || ''));
     if (order.results) {
       const initial: any = {};
       Object.entries(order.results).forEach(([k, v]) => {
-        initial[k] = { value: v.value, flag: v.flag || 'Normal' };
+        initial[k] = { value: String(v.value ?? ''), flag: v.flag || 'Normal' };
       });
       setResultValues(initial);
     } else {
@@ -138,9 +149,12 @@ export function LaboratoryLIMSView({
 
     const updatedResults: any = {};
     Object.entries(resultValues).forEach(([paramName, data]: [string, any]) => {
+      const parameter = labCatalog.find(c => c.id === selectedOrder.testId)?.parameters?.find(p => p.name === paramName);
       updatedResults[paramName] = {
         value: data.value,
-        flag: data.flag
+        flag: data.flag,
+        unit: parameter?.unit,
+        referenceRange: parameter?.referenceRange
       };
     });
 
@@ -149,6 +163,7 @@ export function LaboratoryLIMSView({
     const updated: LabOrder = {
       ...selectedOrder,
       orderStatus: 'RESULT_ENTERED',
+      findingsHtml,
       results: updatedResults,
       likelyIssue: finalIssue,
       clinicalInterpretation,
@@ -168,6 +183,7 @@ export function LaboratoryLIMSView({
       toast.error('Collect the sample before approving a result. Released reports cannot be overwritten.');
       return;
     }
+    if (!canApproveReport(currentUser, critical) || !approvalMatches(reportApproval, reportSnapshot, currentUser)) { toast.error('An authorized reviewer must sign this specific report.'); return; }
     const template = labCatalog.find(c => c.id === selectedOrder.testId);
     if (!template?.parameters?.length || template.parameters.some(p => !resultValues[p.name]?.value?.trim())) {
       toast.error('Enter all measured results using the correct test template before approval.');
@@ -182,15 +198,20 @@ export function LaboratoryLIMSView({
 
     const updatedResults: any = {};
     Object.entries(resultValues).forEach(([paramName, data]: [string, any]) => {
+      const parameter = labCatalog.find(c => c.id === selectedOrder.testId)?.parameters?.find(p => p.name === paramName);
       updatedResults[paramName] = {
         value: data.value,
-        flag: data.flag
+        flag: data.flag,
+        unit: parameter?.unit,
+        referenceRange: parameter?.referenceRange
       };
     });
 
     const updated: LabOrder = {
       ...selectedOrder,
       orderStatus: 'RELEASED',
+      findingsHtml,
+      reportApproval: reportApproval!,
       results: Object.keys(updatedResults).length > 0 ? updatedResults : selectedOrder.results,
       likelyIssue: finalIssue,
       clinicalInterpretation,
@@ -209,7 +230,7 @@ export function LaboratoryLIMSView({
 
   // WhatsApp Direct Share with PDF Download
   const handleSendWhatsAppResult = (order: LabOrder) => {
-    const pat = patients.find(p => p.id === order.patientId || p.mrn === order.mrn || p.fullName.toLowerCase() === order.patientName.toLowerCase());
+    const pat = patients.find(p => p.id === order.patientId);
     const rawPhone = pat?.whatsapp || pat?.phone || order.patientPhone || '';
     const cleanWhatsApp = formatWhatsAppPhone(rawPhone);
     if (order.orderStatus !== 'RELEASED' || !/^234[0-9]{10}$/.test(cleanWhatsApp)) {
@@ -519,14 +540,10 @@ export function LaboratoryLIMSView({
                 {/* Clinical Interpretation */}
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-800 dark:text-slate-200">Microbiologist / Pathologist Remarks & Impression</label>
-                  <textarea 
-                    className="w-full min-h-[60px] p-3 rounded-lg border border-input bg-background text-xs"
-                    placeholder="Clinical impression, diagnostic remarks, and follow-up advice..."
-                    value={clinicalInterpretation}
-                    onChange={(e) => setClinicalInterpretation(e.target.value)}
-                  />
+                  <FindingsEditor label="Laboratory findings" value={findingsHtml} readOnly={selectedOrder.orderStatus === 'RELEASED'} onChange={(html, text) => { setFindingsHtml(html); setClinicalInterpretation(text); }} />
                 </div>
 
+                {selectedOrder.orderStatus !== 'RELEASED' && <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, critical) && selectedOrder.sampleStatus === 'Sample Collected'} onApprove={setReportApproval} />}
                 {/* Scientist Sign-Off Actions */}
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
                   <div className="text-xs text-slate-500">

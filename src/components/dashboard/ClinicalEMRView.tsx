@@ -61,6 +61,10 @@ import { generateClinicalEncounterPDF } from '../../lib/reporting-utils';
 import { AstraDatabaseSetupModal } from './admin/AstraDatabaseSetupModal';
 import { isAstraConfigured } from '../../lib/astra';
 import { toast } from 'sonner';
+import { ReportSignature } from './ReportSignature';
+import { ReportApproval, approvalMatches, canApproveReport } from '../../lib/report-approval';
+import { useTenantModules } from '../../context/TenantModuleContext';
+import { queueClinicianPrescriptions } from '../../lib/cross-module-handoff';
 
 interface ClinicalEMRViewProps {
   patients: PatientRecord[];
@@ -68,6 +72,8 @@ interface ClinicalEMRViewProps {
   labCatalog: LabTestCatalogItem[];
   imagingCatalog: ImagingTestCatalogItem[];
   encounters?: ClinicalEncounter[];
+  labOrders?: any[];
+  imagingOrders?: any[];
   initialPatientId?: string;
   onSaveEncounter: (encounter: ClinicalEncounter) => void;
   onRequestLabTest: (testId: string, patient: PatientRecord, encounterId: string, customItem?: LabTestCatalogItem) => void;
@@ -90,6 +96,8 @@ export function ClinicalEMRView({
   labCatalog,
   imagingCatalog,
   encounters = [],
+  labOrders = [],
+  imagingOrders = [],
   initialPatientId,
   onSaveEncounter,
   onRequestLabTest,
@@ -97,6 +105,11 @@ export function ClinicalEMRView({
   onTransferPatient,
   currentUser
 }: ClinicalEMRViewProps) {
+  const { config } = useTenantModules();
+  const [encounterId, setEncounterId] = useState(() => 'enc-' + crypto.randomUUID());
+  const [finalizing, setFinalizing] = useState(false);
+  const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
+  const finalizeLock = React.useRef(false);
   // Selected Patient State
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(() => {
     if (initialPatientId) {
@@ -196,6 +209,13 @@ export function ClinicalEMRView({
   // Past Encounter Preview Modal
   const [previewPastEncounter, setPreviewPastEncounter] = useState<ClinicalEncounter | null>(null);
 
+  const reportSnapshot = JSON.stringify({ encounterId, patientId: selectedPatient?.id, chiefComplaint, hpi, physicalExam, vitals, selectedDiagnosis, treatmentPlan, prescriptions, selectedLabTestIds, selectedImagingTestIds });
+  const requireSignedConsultation = () => {
+    if (!canApproveReport(currentUser, false, true) || !approvalMatches(reportApproval, reportSnapshot, currentUser)) {
+      toast.error('Review and sign this specific consultation before finalizing or transferring.'); return false;
+    }
+    return true;
+  };
   // Astra DB Setup Modal State
   const [showAstraModal, setShowAstraModal] = useState(false);
   const [isAstraReady, setIsAstraReady] = useState(isAstraConfigured());
@@ -222,6 +242,7 @@ export function ClinicalEMRView({
       return;
     }
 
+    if (!dosage.trim() || !frequency.trim() || !Number.isInteger(quantity) || quantity < 1 || !Number.isInteger(durationDays) || durationDays < 1) { toast.error('Enter dose, frequency, duration and quantity.'); return; }
     const newRx: PrescribedMedication = {
       id: `rx-${Date.now()}`,
       productId: selectedDrug.id,
@@ -387,14 +408,13 @@ export function ClinicalEMRView({
       return;
     }
 
-    const encounterId = `enc-${Date.now()}`;
     const encounter: ClinicalEncounter = {
       id: encounterId,
       patientId: selectedPatient.id,
       patientName: selectedPatient.fullName,
       mrn: selectedPatient.mrn,
-      doctorId: currentUser?.uid || 'doc-101',
-      doctorName: currentUser?.displayName || 'Dr. Evelyn Vance (Chief Clinician)',
+      doctorId: currentUser?.id || currentUser?.uid || '',
+      doctorName: currentUser?.displayName || currentUser?.name || 'Not recorded',
       department: 'General Outpatient (OPD)',
       encounterType: 'OPD Consultation',
       chiefComplaint: chiefComplaint || 'Consultation in progress (Draft)',
@@ -422,7 +442,8 @@ export function ClinicalEMRView({
   };
 
   // 2. COMPLETE & SIGN CONSULTATION (Finalized + PDF)
-  const handleCompleteEncounter = () => {
+  const handleCompleteEncounter = async () => {
+    if (finalizeLock.current || !requireSignedConsultation()) return;
     if (!selectedPatient) {
       toast.error('Select a patient to record consultation.');
       return;
@@ -432,14 +453,13 @@ export function ClinicalEMRView({
       return;
     }
 
-    const encounterId = `enc-${Date.now()}`;
     const encounter: ClinicalEncounter = {
       id: encounterId,
       patientId: selectedPatient.id,
       patientName: selectedPatient.fullName,
       mrn: selectedPatient.mrn,
-      doctorId: currentUser?.uid || 'doc-101',
-      doctorName: currentUser?.displayName || 'Dr. Evelyn Vance (Chief Clinician)',
+      doctorId: currentUser?.id || currentUser?.uid || '',
+      doctorName: currentUser?.displayName || currentUser?.name || 'Not recorded',
       department: 'General Outpatient (OPD)',
       encounterType: 'OPD Consultation',
       chiefComplaint,
@@ -458,10 +478,15 @@ export function ClinicalEMRView({
       requestedLabTests: selectedLabTestIds,
       requestedImagingScans: selectedImagingTestIds,
       status: 'Completed',
+      reportApproval: reportApproval!,
       createdAt: new Date().toISOString(),
       completedAt: new Date().toISOString()
     };
 
+    finalizeLock.current = true; setFinalizing(true);
+    try { await queueClinicianPrescriptions(encounter, currentUser, config); }
+    catch (error: any) { toast.error(error.message); setIsSubmittingTransfer(false); return; }
+    finally { finalizeLock.current = false; setFinalizing(false); }
     onSaveEncounter(encounter);
 
     // Trigger lab order creation
@@ -485,7 +510,8 @@ export function ClinicalEMRView({
   };
 
   // 3. COMPLETE & TRANSFER TO NEXT DEPARTMENT (Pharmacy, Lab, Radiology, Ward, Billing)
-  const handleExecuteTransfer = () => {
+  const handleExecuteTransfer = async () => {
+    if (finalizeLock.current || !requireSignedConsultation()) return;
     if (!selectedPatient) {
       toast.error('Select a patient.');
       return;
@@ -496,14 +522,13 @@ export function ClinicalEMRView({
     }
 
     setIsSubmittingTransfer(true);
-    const encounterId = `enc-${Date.now()}`;
     const encounter: ClinicalEncounter = {
       id: encounterId,
       patientId: selectedPatient.id,
       patientName: selectedPatient.fullName,
       mrn: selectedPatient.mrn,
-      doctorId: currentUser?.uid || 'doc-101',
-      doctorName: currentUser?.displayName || 'Dr. Evelyn Vance (Chief Clinician)',
+      doctorId: currentUser?.id || currentUser?.uid || '',
+      doctorName: currentUser?.displayName || currentUser?.name || 'Not recorded',
       department: 'General Outpatient (OPD)',
       encounterType: 'OPD Consultation',
       chiefComplaint,
@@ -522,10 +547,15 @@ export function ClinicalEMRView({
       requestedLabTests: selectedLabTestIds,
       requestedImagingScans: selectedImagingTestIds,
       status: 'Completed',
+      reportApproval: reportApproval!,
       createdAt: new Date().toISOString(),
       completedAt: new Date().toISOString()
     };
 
+    finalizeLock.current = true; setFinalizing(true);
+    try { await queueClinicianPrescriptions(encounter, currentUser, config); }
+    catch (error: any) { toast.error(error.message); setIsSubmittingTransfer(false); return; }
+    finally { finalizeLock.current = false; setFinalizing(false); }
     onSaveEncounter(encounter);
 
     // Trigger lab orders if any
@@ -555,6 +585,8 @@ export function ClinicalEMRView({
   };
 
   const resetForm = () => {
+    setEncounterId('enc-' + crypto.randomUUID());
+    setReportApproval(null);
     setChiefComplaint('');
     setHpi('');
     setPhysicalExam('');
@@ -615,6 +647,7 @@ export function ClinicalEMRView({
 
           <Button 
             onClick={handleCompleteEncounter}
+                  disabled={finalizing}
             className="bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs gap-1.5 shadow-md"
           >
             <Send className="w-4 h-4" /> Sign & Complete
@@ -643,7 +676,7 @@ export function ClinicalEMRView({
                 value={selectedPatient?.id || ''}
                 onChange={(e) => {
                   const p = patients.find(item => item.id === e.target.value);
-                  if (p) setSelectedPatient(p);
+                  if (p) { resetForm(); setSelectedPatient(p); }
                 }}
               >
                 {patients.map(p => (
@@ -862,6 +895,16 @@ export function ClinicalEMRView({
 
         {/* Right Column: Clinical SOAP, Prescriptions, Lab Orders & Disposition Transfer Console */}
         <div className="lg:col-span-8 space-y-6">
+          <Card className="p-4 space-y-2">
+            <h2 className="font-semibold text-sm">Released diagnostic results</h2>
+            {[...labOrders.filter(o => o.orderStatus === 'RELEASED'), ...imagingOrders.filter(o => o.orderStatus === 'Released')].filter(o => o.patientId === selectedPatient?.id).map(o =>
+              <details key={o.id} className="rounded border p-2 text-xs"><summary>{o.testName} — {o.reportNumber || o.accessionNumber}</summary>
+                <p className="whitespace-pre-wrap mt-2">{o.clinicalInterpretation || o.findingsNotes}</p>
+                {o.results && <ul>{Object.entries(o.results).map(([name, result]: [string, any]) => <li key={name}>{name}: {result.value} {result.unit} ({result.flag})</li>)}</ul>}
+                <p>{o.impressionNotes}</p><p>Reviewed by {o.validatedByName || o.radiologistName}</p>
+              </details>)}
+            {!labOrders.some(o => o.patientId === selectedPatient?.id && o.orderStatus === 'RELEASED') && !imagingOrders.some(o => o.patientId === selectedPatient?.id && o.orderStatus === 'Released') && <p className="text-xs text-slate-500">No released results for the selected patient.</p>}
+          </Card>
           {/* 1. Clinical SOAP Notes */}
           <Card className="border-slate-200 dark:border-slate-800 shadow-xs rounded-2xl">
             <CardHeader className="pb-3 border-b border-slate-100 dark:border-slate-800">
@@ -1265,6 +1308,7 @@ export function ClinicalEMRView({
                       if (p) setSelectedDrug(p);
                     }}
                   >
+                    <option value="">Select a stocked item</option>
                     {products.map(p => (
                       <option key={p.id} value={p.id}>
                         {p.name} ({p.genericName}) — Stock: {p.stock} — ₦{p.price.toLocaleString()}
@@ -1290,6 +1334,10 @@ export function ClinicalEMRView({
                   <Input type="number" value={durationDays} onChange={(e) => setDurationDays(Number(e.target.value))} />
                 </div>
 
+                <div>
+                  <label className="font-semibold text-slate-700 block mb-1">Quantity to dispense</label>
+                  <Input aria-label="Prescription quantity" type="number" min="1" step="1" value={quantity} onChange={e => setQuantity(Number(e.target.value))} />
+                </div>
                 <div className="flex items-end">
                   <Button onClick={handleAddMedication} type="button" className="w-full bg-emerald-600 hover:bg-emerald-500 text-white gap-2 font-semibold">
                     <Plus className="w-4 h-4" /> Add to Rx
@@ -1798,6 +1846,7 @@ export function ClinicalEMRView({
             )}
           </div>
 
+          <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, false, true) && Boolean(chiefComplaint.trim())} onApprove={setReportApproval} />
           {/* 4. DEDICATED CONSULTATION DISPOSITION & DEPARTMENT TRANSFER CONSOLE */}
           <Card className="border-2 border-emerald-500/30 bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 text-white rounded-3xl p-6 shadow-xl">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">

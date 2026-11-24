@@ -1,4 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, lazy, Suspense } from 'react';
+import { WorkflowDashboard } from './components/dashboard/WorkflowDashboard';
+import { routePatient, transferTicket, completeDiagnostic, chargeForOrder } from './lib/workflow';
+import { clearSignatureVault } from './lib/report-approval';
+import { getLocalPharmacyHandoffQueue } from './lib/cross-module-handoff';
 import { Toaster, toast } from 'sonner';
 import { syncOfflineCache, registerSyncListener, startPeriodicSync } from './services/syncManager';
 import { getPendingSales } from './services/offlineDB';
@@ -54,32 +58,32 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 
 // Components
-import { InventoryView } from './components/dashboard/InventoryView';
-import { POSView } from './components/dashboard/POSView';
-import { AdminAnalytics } from './components/dashboard/AdminAnalytics';
-import { OrderHistoryView } from './components/dashboard/OrderHistoryView';
-import { OwingRecordsView } from './components/dashboard/OwingRecordsView';
-import { B2BLogisticsView } from './components/dashboard/B2BLogisticsView';
-import { StaffManagementView } from './components/dashboard/StaffManagementView';
-import { OverviewView } from './components/dashboard/OverviewView';
-import { WarehouseView } from './components/dashboard/WarehouseView';
-import { SupplyManager } from './components/dashboard/SupplyManager';
-import { ExpensesView } from './components/dashboard/ExpensesView';
+const InventoryView = lazy(() => import('./components/dashboard/InventoryView').then(m => ({ default: m.InventoryView })));
+const POSView = lazy(() => import('./components/dashboard/POSView').then(m => ({ default: m.POSView })));
+const AdminAnalytics = lazy(() => import('./components/dashboard/AdminAnalytics').then(m => ({ default: m.AdminAnalytics })));
+const OrderHistoryView = lazy(() => import('./components/dashboard/OrderHistoryView').then(m => ({ default: m.OrderHistoryView })));
+const OwingRecordsView = lazy(() => import('./components/dashboard/OwingRecordsView').then(m => ({ default: m.OwingRecordsView })));
+const B2BLogisticsView = lazy(() => import('./components/dashboard/B2BLogisticsView').then(m => ({ default: m.B2BLogisticsView })));
+const StaffManagementView = lazy(() => import('./components/dashboard/StaffManagementView').then(m => ({ default: m.StaffManagementView })));
+const OverviewView = lazy(() => import('./components/dashboard/OverviewView').then(m => ({ default: m.OverviewView })));
+const WarehouseView = lazy(() => import('./components/dashboard/WarehouseView').then(m => ({ default: m.WarehouseView })));
+const SupplyManager = lazy(() => import('./components/dashboard/SupplyManager').then(m => ({ default: m.SupplyManager })));
+const ExpensesView = lazy(() => import('./components/dashboard/ExpensesView').then(m => ({ default: m.ExpensesView })));
 import { LoginPage } from './components/LoginPage';
 import TransferView from './components/dashboard/TransferView';
 
 // Admin Components
-import { UserManagementView } from './components/dashboard/admin/UserManagementView';
-import { ProductCatalogView } from './components/dashboard/admin/ProductCatalogView';
-import { MarketingConsole } from './components/dashboard/admin/MarketingConsole';
-import { ReportsAnalyticsView } from './components/dashboard/admin/ReportsAnalyticsView';
-import { SystemSettingsView } from './components/dashboard/admin/SystemSettingsView';
-import { CustomerCentral } from './components/dashboard/admin/CustomerCentral';
-import { IntegrationsView } from './components/dashboard/admin/IntegrationsView';
-import { MerchantStoreView } from './components/dashboard/admin/MerchantStoreView';
-import { AdminSecurityModal } from './components/dashboard/admin/AdminSecurityModal';
-import { SuperAdminSaaSView } from './components/dashboard/admin/SuperAdminSaaSView';
-import { AstraDatabaseSetupModal } from './components/dashboard/admin/AstraDatabaseSetupModal';
+const UserManagementView = lazy(() => import('./components/dashboard/admin/UserManagementView').then(m => ({ default: m.UserManagementView })));
+const ProductCatalogView = lazy(() => import('./components/dashboard/admin/ProductCatalogView').then(m => ({ default: m.ProductCatalogView })));
+const MarketingConsole = lazy(() => import('./components/dashboard/admin/MarketingConsole').then(m => ({ default: m.MarketingConsole })));
+const ReportsAnalyticsView = lazy(() => import('./components/dashboard/admin/ReportsAnalyticsView').then(m => ({ default: m.ReportsAnalyticsView })));
+const SystemSettingsView = lazy(() => import('./components/dashboard/admin/SystemSettingsView').then(m => ({ default: m.SystemSettingsView })));
+const CustomerCentral = lazy(() => import('./components/dashboard/admin/CustomerCentral').then(m => ({ default: m.CustomerCentral })));
+const IntegrationsView = lazy(() => import('./components/dashboard/admin/IntegrationsView').then(m => ({ default: m.IntegrationsView })));
+const MerchantStoreView = lazy(() => import('./components/dashboard/admin/MerchantStoreView').then(m => ({ default: m.MerchantStoreView })));
+const AdminSecurityModal = lazy(() => import('./components/dashboard/admin/AdminSecurityModal').then(m => ({ default: m.AdminSecurityModal })));
+const SuperAdminSaaSView = lazy(() => import('./components/dashboard/admin/SuperAdminSaaSView').then(m => ({ default: m.SuperAdminSaaSView })));
+const AstraDatabaseSetupModal = lazy(() => import('./components/dashboard/admin/AstraDatabaseSetupModal').then(m => ({ default: m.AstraDatabaseSetupModal })));
 import { UserAccountMenu } from './components/dashboard/UserAccountMenu';
 
 import { DashboardFooter } from './components/dashboard/DashboardFooter';
@@ -100,19 +104,19 @@ import {
 } from './lib/saas-pricing';
 
 // Healthcare Components
-import { PatientCentral } from './components/dashboard/PatientCentral';
-import { ClinicalEMRView } from './components/dashboard/ClinicalEMRView';
-import { LaboratoryLIMSView } from './components/dashboard/LaboratoryLIMSView';
-import { RadiologyView } from './components/dashboard/RadiologyView';
-import { InpatientWardView } from './components/dashboard/InpatientWardView';
-import { HospitalQueueManager } from './components/dashboard/HospitalQueueManager';
-import { AppointmentsView } from './components/dashboard/AppointmentsView';
-import { HospitalBillingView } from './components/dashboard/HospitalBillingView';
-import { AIHealthcareAssistant } from './components/dashboard/AIHealthcareAssistant';
-import { FacilityOnboardingModal } from './components/dashboard/FacilityOnboardingModal';
-import { RapidResultConsole } from './components/dashboard/RapidResultConsole';
-import { TenantModuleSettingsView } from './components/dashboard/TenantModuleSettingsView';
-import { PatientPortalView } from './components/dashboard/PatientPortalView';
+const PatientCentral = lazy(() => import('./components/dashboard/PatientCentral').then(m => ({ default: m.PatientCentral })));
+const ClinicalEMRView = lazy(() => import('./components/dashboard/ClinicalEMRView').then(m => ({ default: m.ClinicalEMRView })));
+const LaboratoryLIMSView = lazy(() => import('./components/dashboard/LaboratoryLIMSView').then(m => ({ default: m.LaboratoryLIMSView })));
+const RadiologyView = lazy(() => import('./components/dashboard/RadiologyView').then(m => ({ default: m.RadiologyView })));
+const InpatientWardView = lazy(() => import('./components/dashboard/InpatientWardView').then(m => ({ default: m.InpatientWardView })));
+const HospitalQueueManager = lazy(() => import('./components/dashboard/HospitalQueueManager').then(m => ({ default: m.HospitalQueueManager })));
+const AppointmentsView = lazy(() => import('./components/dashboard/AppointmentsView').then(m => ({ default: m.AppointmentsView })));
+const HospitalBillingView = lazy(() => import('./components/dashboard/HospitalBillingView').then(m => ({ default: m.HospitalBillingView })));
+const AIHealthcareAssistant = lazy(() => import('./components/dashboard/AIHealthcareAssistant').then(m => ({ default: m.AIHealthcareAssistant })));
+const FacilityOnboardingModal = lazy(() => import('./components/dashboard/FacilityOnboardingModal').then(m => ({ default: m.FacilityOnboardingModal })));
+const RapidResultConsole = lazy(() => import('./components/dashboard/RapidResultConsole').then(m => ({ default: m.RapidResultConsole })));
+const TenantModuleSettingsView = lazy(() => import('./components/dashboard/TenantModuleSettingsView').then(m => ({ default: m.TenantModuleSettingsView })));
+const PatientPortalView = lazy(() => import('./components/dashboard/PatientPortalView').then(m => ({ default: m.PatientPortalView })));
 import { DepartmentCommHub } from './components/dashboard/DepartmentCommHub';
 import { TenantModuleProvider, useTenantModules } from './context/TenantModuleContext';
 import { NotificationProvider, useNotifications } from './context/NotificationContext';
@@ -179,14 +183,14 @@ export default function App() {
   return (
     <NotificationProvider>
       <TenantModuleProvider>
-        <AppShell />
+        <Suspense fallback={<div role="status" className="p-6 text-sm">Loading workspace…</div>}><AppShell /></Suspense>
       </TenantModuleProvider>
     </NotificationProvider>
   );
 }
 
 function AppShell() {
-  const { isViewEnabled, mutedModulesCount } = useTenantModules();
+  const { isViewEnabled, mutedModulesCount, config: clinicalTenantConfig } = useTenantModules();
   const { unreadCount } = useNotifications();
   const [isCommHubOpen, setIsCommHubOpen] = useState(false);
   const pwa = usePWA();
@@ -228,7 +232,12 @@ function AppShell() {
       return false;
     }
   });
-  const [view, setView] = useState<DashView>('rapid_console');
+  const [view, setView] = useState<DashView>(() => {
+    try {
+      const stored = JSON.parse(localStorage.getItem('ph_current_user') || 'null');
+      return stored ? getRoleDefinition(stored.role).defaultView as DashView : 'rapid_console';
+    } catch { return 'rapid_console'; }
+  });
   const [selectedBranchId, setSelectedBranchId] = useState(() => {
     const savedUser = localStorage.getItem('ph_current_user');
     if (savedUser) {
@@ -250,6 +259,8 @@ function AppShell() {
     return null;
   });
 
+  useEffect(() => { clearSignatureVault(); }, [currentUser?.id]);
+
   // Healthcare Operational Datasets
   const [patients, setPatients] = useState<any[]>(() => {
     const saved = localStorage.getItem('tm_patients');
@@ -257,6 +268,13 @@ function AppShell() {
   });
 
   const [selectedConsultationPatientId, setSelectedConsultationPatientId] = useState<string>('');
+  const [clinicalProducts, setClinicalProducts] = useState<any[]>([]);
+  useEffect(() => {
+    if (!isLoggedIn || (view !== 'emr' && view !== 'ai_assistant')) return;
+    let cancelled = false;
+    apiService.products.list(selectedBranchId).then(items => { if (!cancelled) setClinicalProducts(items); }).catch(() => { if (!cancelled) setClinicalProducts([]); });
+    return () => { cancelled = true; };
+  }, [isLoggedIn, view, selectedBranchId]);
 
   const [encounters, setEncounters] = useState<any[]>(() => {
     const saved = localStorage.getItem('tm_encounters');
@@ -298,6 +316,34 @@ function AppShell() {
   });
 
   const [hmoClaims, setHmoClaims] = useState<any[]>(DEFAULT_HMO_CLAIMS);
+  useEffect(() => { localStorage.setItem('tm_encounters', JSON.stringify(encounters)); }, [encounters]);
+  useEffect(() => {
+    const syncDispensing = () => {
+      const handoffs = getLocalPharmacyHandoffQueue(clinicalTenantConfig.tenantId);
+      setEncounters(prev => prev.map(enc => {
+        if (!enc.prescriptions?.length) return enc;
+        return { ...enc, prescriptions: enc.prescriptions.map((rx: any) =>
+          handoffs.some(h => h.handoffId === 'RX-' + enc.id + '-' + rx.id && h.status === 'DISPENSED') ? { ...rx, status: 'Dispensed' } : rx) };
+      }));
+      setQueueTickets(prev => prev.map(ticket => {
+        const requests = handoffs.filter(h => h.labResultId === ticket.sourceOrderId);
+        return ticket.department === 'Pharmacy' && requests.length > 0 && requests.every(h => h.status === 'DISPENSED') ? { ...ticket, status: 'Completed' } : ticket;
+      }));
+    };
+    window.addEventListener('tekilab_pharmacy_queue_updated', syncDispensing);
+    return () => window.removeEventListener('tekilab_pharmacy_queue_updated', syncDispensing);
+  }, [clinicalTenantConfig.tenantId]);
+  useEffect(() => { localStorage.setItem('tm_queue_tickets', JSON.stringify(queueTickets)); }, [queueTickets]);
+  useEffect(() => { localStorage.setItem('tm_charges', JSON.stringify(charges)); }, [charges]);
+  useEffect(() => { localStorage.setItem('tm_lab_orders', JSON.stringify(labOrders)); }, [labOrders]);
+  useEffect(() => { localStorage.setItem('tm_imaging_orders', JSON.stringify(imagingOrders)); }, [imagingOrders]);
+  const queueDiagnostic = (order: any, imaging = false) => {
+    setQueueTickets(prev => routePatient(prev, { id: order.patientId, fullName: order.patientName, mrn: order.mrn }, imaging ? 'Radiology' : 'Laboratory', order.testName, order.id));
+    setCharges(prev => prev.some(c => c.id === 'charge-' + order.id) ? prev : [chargeForOrder(order, imaging), ...prev]);
+  };
+  const returnReleasedDiagnostic = (order: any, imaging = false) => {
+    if (order.orderStatus === (imaging ? 'Released' : 'RELEASED')) setQueueTickets(prev => completeDiagnostic(prev, order, imaging ? 'Radiology' : 'Laboratory'));
+  };
   const [isFacilityOnboardingOpen, setIsFacilityOnboardingOpen] = useState(false);
 
   const [showWelcome, setShowWelcome] = useState(false);
@@ -692,7 +738,7 @@ function AppShell() {
           isAdmin={isAdminRoute}
         />
         <SplashScreen 
-          show={pwa.showSplashScreen} 
+          show={pwa.showSplashScreen && !isLoggedIn}
           onFinish={pwa.dismissSplashScreen} 
           deviceOS={pwa.deviceOS}
           isStandalone={pwa.isStandalone}
@@ -847,7 +893,14 @@ function AppShell() {
 
   const hasAccessToView = (v: string) => {
     if (role === 'admin' || currentUser?.role === 'Kernel Admin' || currentUser?.role === 'admin') return true;
-    const permissions = currentUser?.permissions || [];
+    const permissions = [...new Set([...(currentUser?.permissions || []), ...getRoleDefinition(currentUser?.role).permissions])];
+    const clinicalAccess: Record<string, string[]> = {
+      rapid_console: ['canRunRapidLab','canCollectSamples'], lab: ['canRunRapidLab'], radiology: ['canReviewImaging'],
+      emr: ['canConsultPatients'], queue: ['canManageQueue'], patients: ['canManagePatients'],
+      billing: ['canManageBilling'], module_config: ['canManageModules'], ai_assistant: ['canRunRapidLab','canConsultPatients'],
+      inpatient: ['canConsultPatients','canNursePatients'], nurse_station: ['canConsultPatients']
+    };
+    if (clinicalAccess[v]) return clinicalAccess[v].some(p => permissions.includes(p));
 
     // Dashboard overview & SaaS Subscription Tracker are accessible to authenticated company admins/managers
     if (v === 'overview') return true;
@@ -871,7 +924,7 @@ function AppShell() {
       if (userRole === 'Store Manager' || userRole === 'Terminal Manager' || userRole === 'merchant') {
         return permissions.length === 0 || permissions.includes('canAccessPOS');
       }
-      return permissions.includes('canAccessPOS');
+      return permissions.includes('canAccessPOS') || permissions.includes('canAccessPharmacy');
     }
     // Customers
     if (v === 'admin_customers') {
@@ -1084,34 +1137,7 @@ function AppShell() {
                     </p>
                     <span className="text-[10px] font-mono text-blue-400">{activeRoleDef.department}</span>
                   </div>
-                  <select
-                    value={activeRoleDef.id}
-                    onChange={(e) => {
-                      const nextDef = getRoleDefinition(e.target.value);
-                      const updatedUser = {
-                        ...(currentUser || { id: 'usr-demo', name: 'TekiLab User', email: 'user@tekilab.io' }),
-                        role: nextDef.label,
-                        department: nextDef.department,
-                        permissions: nextDef.permissions
-                      };
-                      setCurrentUser(updatedUser);
-                      localStorage.setItem('ph_current_user', JSON.stringify(updatedUser));
-                      if (nextDef.id !== 'patient') {
-                        setView((nextDef.defaultView as DashView) || 'rapid_console');
-                      }
-                      toast.success(`Switched to ${nextDef.label} Dashboard`);
-                    }}
-                    className="w-full h-8 px-2 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white font-medium outline-none"
-                  >
-                    <option value="ceo">CEO / Executive</option>
-                    <option value="branch_manager">Branch Lab Manager</option>
-                    <option value="lead_lab_scientist">Lead Lab Scientist</option>
-                    <option value="lab_scientist">Medical Lab Scientist</option>
-                    <option value="phlebotomist">Phlebotomist</option>
-                    <option value="receptionist">Front Desk / Receptionist</option>
-                    <option value="doctor">Consulting Doctor</option>
-                    <option value="patient">Patient Portal</option>
-                  </select>
+                  <p className="text-xs text-slate-400">Roles are assigned through staff management.</p>
                 </div>
               ) : (
                 <Button 
@@ -1403,13 +1429,10 @@ function AppShell() {
                     </div>
                   ) : (
                     <>
-                      {view === 'overview' && (
-                        <OverviewView 
-                          role={role} 
-                          setView={(v) => setView(v as any)} 
-                          selectedBranchId={selectedBranchId} 
-                        />
-                      )}
+                      {view === 'overview' && (<>
+                        <WorkflowDashboard labs={labOrders} imaging={imagingOrders} tickets={queueTickets} charges={charges} user={currentUser} onNavigate={v => setView(v as DashView)} />
+                        <OverviewView role={role} setView={(v) => setView(v as any)} selectedBranchId={selectedBranchId} />
+                      </>)}
                       {view === 'saas_control' && (
                         <SuperAdminSaaSView
                           isSuperAdmin={role === 'admin' || currentUser?.role === 'Kernel Admin'}
@@ -1472,7 +1495,7 @@ function AppShell() {
                               patientId: p.id,
                               patientName: p.fullName,
                               mrn: p.mrn,
-                              department: targetDept === 'Pharmacy' ? 'Pharmacy' : targetDept === 'Laboratory' ? 'Laboratory' : targetDept === 'Radiology' ? 'Radiology' : targetDept === 'Inpatient Ward' ? 'Triage' : 'Billing',
+                              department: targetDept === 'Inpatient Ward' ? 'Triage' : targetDept,
                               status: 'Waiting',
                               priority: 'Normal',
                               issuedAt: new Date().toISOString(),
@@ -1488,10 +1511,12 @@ function AppShell() {
                       {view === 'emr' && (
                         <ClinicalEMRView 
                           patients={patients} 
-                          products={mockProducts} 
+                          products={clinicalProducts}
                           labCatalog={labCatalog} 
                           imagingCatalog={imagingCatalog}
                           encounters={encounters}
+                          labOrders={labOrders}
+                          imagingOrders={imagingOrders}
                           initialPatientId={selectedConsultationPatientId}
                           onSaveEncounter={(enc) => {
                             const existingIndex = encounters.findIndex(e => e.id === enc.id);
@@ -1502,6 +1527,12 @@ function AppShell() {
                               newEnc = [enc, ...encounters];
                             }
                             setEncounters(newEnc);
+                            if (enc.status === 'Completed') {
+                              setQueueTickets(prev => {
+                                const completed = prev.map(t => t.patientId === enc.patientId && t.department === 'Doctor Consultation' && !['Completed','Cancelled'].includes(t.status) ? { ...t, status: 'Completed' } : t);
+                                return enc.prescriptions?.length ? routePatient(completed, { id: enc.patientId, fullName: enc.patientName, mrn: enc.mrn }, 'Pharmacy', 'Signed consultation prescription', enc.id) : completed;
+                              });
+                            }
                             localStorage.setItem('tm_encounters', JSON.stringify(newEnc));
                           }}
                           onRequestLabTest={(testId, p, encId, customItem) => {
@@ -1521,14 +1552,13 @@ function AppShell() {
                               accessionNumber: `ACC-2026-${Math.floor(1000 + Math.random() * 9000)}`,
                               sampleType: cat?.sampleType || 'Blood',
                               sampleStatus: 'Awaiting Collection',
-                              orderStatus: 'PROCESSING',
+                              orderStatus: 'ORDERED',
                               priceNaira: cat?.priceNaira || 2500,
                               billingStatus: 'Pending',
                               createdAt: new Date().toISOString()
                             };
-                            const newLabs = [newLab, ...labOrders];
-                            setLabOrders(newLabs);
-                            localStorage.setItem('tm_lab_orders', JSON.stringify(newLabs));
+                            setLabOrders(prev => [newLab, ...prev]);
+                            queueDiagnostic(newLab);
                           }}
                           onRequestImagingScan={(testId, p, encId, customItem) => {
                             const cat = customItem || imagingCatalog.find(c => c.id === testId);
@@ -1550,9 +1580,8 @@ function AppShell() {
                               billingStatus: 'Pending',
                               createdAt: new Date().toISOString()
                             };
-                            const newImgs = [newImg, ...imagingOrders];
-                            setImagingOrders(newImgs);
-                            localStorage.setItem('tm_imaging_orders', JSON.stringify(newImgs));
+                            setImagingOrders(prev => [newImg, ...prev]);
+                            queueDiagnostic(newImg, true);
                           }}
                           onTransferPatient={(p, targetDept, notes) => {
                             const newTicket: any = {
@@ -1561,7 +1590,7 @@ function AppShell() {
                               patientId: p.id,
                               patientName: p.fullName,
                               mrn: p.mrn,
-                              department: targetDept === 'Pharmacy' ? 'Pharmacy' : targetDept === 'Laboratory' ? 'Laboratory' : targetDept === 'Radiology' ? 'Radiology' : targetDept === 'Inpatient Ward' ? 'Triage' : 'Billing',
+                              department: targetDept === 'Inpatient Ward' ? 'Triage' : targetDept,
                               status: 'Waiting',
                               priority: 'Normal',
                               issuedAt: new Date().toISOString(),
@@ -1585,6 +1614,8 @@ function AppShell() {
                               ? labOrders.map(l => l.id === updated.id ? updated : l)
                               : [updated, ...labOrders];
                             setLabOrders(newLabs);
+                            if (!exists && updated.pricingStatus === 'Quoted') setCharges(prev => prev.some(c => c.id === 'charge-' + updated.id) ? prev : [chargeForOrder(updated), ...prev]);
+                            returnReleasedDiagnostic(updated);
                             localStorage.setItem('tm_lab_orders', JSON.stringify(newLabs));
                           }}
                           onRegisterPatient={(newPatient) => {
@@ -1631,9 +1662,8 @@ function AppShell() {
                           labCatalog={labCatalog} 
                           patients={patients}
                           onUpdateLabOrder={(updated) => {
-                            const newLabs = labOrders.map(l => l.id === updated.id ? updated : l);
-                            setLabOrders(newLabs);
-                            localStorage.setItem('tm_lab_orders', JSON.stringify(newLabs));
+                            setLabOrders(prev => prev.map(l => l.id === updated.id ? updated : l));
+                            returnReleasedDiagnostic(updated);
                           }}
                           currentUser={currentUser}
                         />
@@ -1644,9 +1674,8 @@ function AppShell() {
                           imagingCatalog={imagingCatalog} 
                           patients={patients}
                           onUpdateImagingOrder={(updated) => {
-                            const newImgs = imagingOrders.map(i => i.id === updated.id ? updated : i);
-                            setImagingOrders(newImgs);
-                            localStorage.setItem('tm_imaging_orders', JSON.stringify(newImgs));
+                            setImagingOrders(prev => prev.map(i => i.id === updated.id ? updated : i));
+                            returnReleasedDiagnostic(updated, true);
                           }}
                           currentUser={currentUser}
                         />
@@ -1682,6 +1711,7 @@ function AppShell() {
                             setQueueTickets(newQ);
                             localStorage.setItem('tm_queue_tickets', JSON.stringify(newQ));
                           }}
+                          onTransferTicket={(tid, dept) => setQueueTickets(prev => transferTicket(prev, tid, dept))}
                           onUpdateTicketStatus={(tid, st) => {
                             setQueueTickets(prev => prev.map(q => q.id === tid ? { ...q, status: st } : q));
                           }}
@@ -1711,6 +1741,11 @@ function AppShell() {
                           }}
                           onPayCharge={(cid) => {
                             setCharges(prev => prev.map(c => c.id === cid ? { ...c, paymentStatus: 'Paid' } : c));
+                            const charge = charges.find(c => c.id === cid);
+                            if (charge?.sourceOrderId) {
+                              setLabOrders(prev => prev.map(o => o.id === charge.sourceOrderId ? { ...o, billingStatus: 'Paid' } : o));
+                              setImagingOrders(prev => prev.map(o => o.id === charge.sourceOrderId ? { ...o, billingStatus: 'Paid' } : o));
+                            }
                           }}
                         />
                       )}
@@ -1719,7 +1754,7 @@ function AppShell() {
                           patients={patients} 
                           encounters={encounters} 
                           labOrders={labOrders} 
-                          products={mockProducts}
+                          products={clinicalProducts}
                         />
                       )}
                       {view === 'admin_users' && <UserManagementView selectedBranchId={selectedBranchId} />}
@@ -1828,7 +1863,7 @@ function AppShell() {
 
         {/* Welcome Splash Screen for Installed App */}
         <SplashScreen 
-          show={pwa.showSplashScreen} 
+          show={pwa.showSplashScreen && !isLoggedIn}
           onFinish={pwa.dismissSplashScreen} 
           deviceOS={pwa.deviceOS}
           isStandalone={pwa.isStandalone}

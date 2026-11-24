@@ -10,6 +10,8 @@ export type TekiLabDepartment =
   | 'Doctor Consultation'
   | 'Pharmacy'
   | 'Billing'
+  | 'Radiology'
+  | 'Nursing'
   | 'Patient Portal';
 
 export type LimsPermissionKey =
@@ -27,7 +29,9 @@ export type LimsPermissionKey =
   | 'canManageModules'
   | 'canViewBranchAnalytics'
   | 'canManageBilling'
-  | 'canAccessPharmacy';
+  | 'canAccessPharmacy'
+  | 'canReviewImaging'
+  | 'canNursePatients';
 
 export interface LimsPermissionDescriptor {
   key: LimsPermissionKey;
@@ -37,6 +41,8 @@ export interface LimsPermissionDescriptor {
 }
 
 export const LIMS_PERMISSIONS_CATALOG: LimsPermissionDescriptor[] = [
+  { key: 'canReviewImaging', label: 'Review diagnostic imaging', description: 'Record and approve imaging findings within clinical scope.', category: 'Laboratory' },
+  { key: 'canNursePatients', label: 'Nursing and ward care', description: 'Record ward observations and nursing care.', category: 'Clinical & Front Desk' },
   { key: 'canRunRapidLab', label: 'Run 5–10m Rapid Lab Workflow', description: 'Execute rapid diagnostic tests, enter results & run AI analysis', category: 'Laboratory' },
   { key: 'canSignOffCritical', label: 'Sign Off Critical / Panic Results', description: 'Pathologist / Lead Scientist final approval & digital signature', category: 'Laboratory' },
   { key: 'canCollectSamples', label: 'Sample Collection & QR Custody', description: 'Register specimens, print QR labels & confirm tube collection', category: 'Laboratory' },
@@ -196,9 +202,21 @@ export const TEKILAB_ROLES: TekiLabRoleDefinition[] = [
   },
 ];
 
+TEKILAB_ROLES.push(
+  { id: 'unassigned', label: 'Staff', shortLabel: 'Staff', department: 'Reception', level: 1, defaultView: 'overview', isMultiBranch: false, canManageBranchStaff: false, description: 'Access is determined by assigned permissions.', permissions: [] },
+  { id: 'nurse', label: 'Nurse', shortLabel: 'Nurse', department: 'Nursing', level: 2, defaultView: 'inpatient', isMultiBranch: false, canManageBranchStaff: false, description: 'Ward and nursing care.', permissions: ['canNursePatients','canManagePatients','canManageQueue','canBeepDepartments'] },
+  { id: 'radiologist', label: 'Radiologist', shortLabel: 'Radiologist', department: 'Radiology', level: 3, defaultView: 'radiology', isMultiBranch: false, canManageBranchStaff: false, description: 'Records and approves diagnostic imaging findings.', permissions: ['canReviewImaging','canManageQueue','canManagePatients','canBeepDepartments'] },
+  { id: 'pharmacist', label: 'Pharmacist', shortLabel: 'Pharmacist', department: 'Pharmacy', level: 3, defaultView: 'pos', isMultiBranch: false, canManageBranchStaff: false, description: 'Reviews clinician prescriptions and dispenses through checkout.', permissions: ['canAccessPharmacy','canManageQueue','canBeepDepartments'] },
+  { id: 'billing', label: 'Billing Officer', shortLabel: 'Billing', department: 'Billing', level: 2, defaultView: 'billing', isMultiBranch: false, canManageBranchStaff: false, description: 'Reconciles patient charges and payments.', permissions: ['canManageBilling','canManageQueue'] }
+);
 export function getRoleDefinition(roleNameOrId?: string): TekiLabRoleDefinition {
-  if (!roleNameOrId) return TEKILAB_ROLES[2]; // Lead Lab Scientist default
+  if (!roleNameOrId) return TEKILAB_ROLES.find(r => r.id === 'unassigned')!;
   const q = roleNameOrId.toLowerCase().trim();
+  if (/nurs/.test(q)) return TEKILAB_ROLES.find(r => r.id === 'nurse')!;
+  if (['company_admin','company admin','hospital_admin','hospital admin'].includes(q)) return TEKILAB_ROLES[1];
+  if (/radiolog/.test(q)) return TEKILAB_ROLES.find(r => r.id === 'radiologist')!;
+  if (/pharmac/.test(q)) return TEKILAB_ROLES.find(r => r.id === 'pharmacist')!;
+  if (/billing|cashier/.test(q)) return TEKILAB_ROLES.find(r => r.id === 'billing')!;
   if (q === 'kernel admin' || q === 'admin' || q.includes('ceo') || q.includes('executive')) {
     return TEKILAB_ROLES[0];
   }
@@ -223,7 +241,7 @@ export function getRoleDefinition(roleNameOrId?: string): TekiLabRoleDefinition 
   if (q.includes('patient')) {
     return TEKILAB_ROLES[7];
   }
-  return TEKILAB_ROLES[3];
+  return TEKILAB_ROLES.find(r => r.id === 'unassigned')!;
 }
 
 export const ALL_DEPARTMENTS: TekiLabDepartment[] = [
@@ -233,6 +251,7 @@ export const ALL_DEPARTMENTS: TekiLabDepartment[] = [
   'Doctor Consultation',
   'Pharmacy',
   'Billing',
+  'Radiology',
   'Executive',
 ];
 

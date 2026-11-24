@@ -1,4 +1,10 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { SpecimenCode, downloadSpecimenLabel } from './SpecimenCode';
+import { FindingsEditor } from './FindingsEditor';
+import { ReportSignature } from './ReportSignature';
+import { ReportApproval, approvalMatches, canApproveReport } from '../../lib/report-approval';
+import { textToFindings } from '../../lib/findings';
+
 import {
   FlaskConical,
   ScanLine,
@@ -52,7 +58,7 @@ import { useTenantModules } from '../../context/TenantModuleContext';
 import { useNotifications } from '../../context/NotificationContext';
 import { normalizeNigerianWhatsAppPhone, TekiLabDepartment } from '../../config/roles';
 import { handoffLabResultToPharmacyQueue } from '../../lib/cross-module-handoff';
-import { generateLabReportPDF } from '../../lib/reporting-utils';
+import { generateLabReportPDF, generateAIReviewPDF } from '../../lib/reporting-utils';
 
 interface RapidResultConsoleProps {
   labOrders: LabOrder[];
@@ -238,7 +244,7 @@ const STEPS: { num: WorkflowStep; label: string; sub: string }[] = [
 
 function generateSampleUid(): string {
   const yr = new Date().getFullYear();
-  const num = Math.floor(10000 + Math.random() * 89999);
+  const num = crypto.randomUUID().replaceAll('-', '').slice(0, 16);
   return `TK-${yr}-${num}`;
 }
 
@@ -331,6 +337,8 @@ export function RapidResultConsole({
   // Stepper & SLA Timer
   const [step, setStep] = useState<WorkflowStep>(1);
   const [elapsedSeconds, setElapsedSeconds] = useState<number>(0);
+  const [workflowStartedAt, setWorkflowStartedAt] = useState(() => Date.now());
+  const [quotedFee, setQuotedFee] = useState('');
   const [timerActive, setTimerActive] = useState<boolean>(true);
   const [panelViewMode, setPanelViewMode] = useState<'list' | 'grid'>('list');
   const [panelSearch, setPanelSearch] = useState<string>('');
@@ -341,7 +349,7 @@ export function RapidResultConsole({
   const [patientSearch, setPatientSearch] = useState('');
   const [selectedPatientId, setSelectedPatientId] = useState<string>('');
   const [patientName, setPatientName] = useState('');
-  const [patientAge, setPatientAge] = useState('32');
+  const [patientAge, setPatientAge] = useState('');
   const [patientGender, setPatientGender] = useState<'Male' | 'Female'>('Male');
   const [patientPhone, setPatientPhone] = useState('');
   const [patientAllergies, setPatientAllergies] = useState('');
@@ -372,6 +380,11 @@ export function RapidResultConsole({
   );
   const [approvalNotes, setApprovalNotes] = useState<string>('');
   const [isApproved, setIsApproved] = useState<boolean>(false);
+  const [findingsHtml, setFindingsHtml] = useState('');
+  const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
+  const reportSnapshot = JSON.stringify({ sampleUid, selectedPatientId, patientName, patientPhone, selectedPanelId, parameters, custodyVerified, approvalNotes, findingsHtml, aiReport, quotedFee });
+  const critical = parameters.some(p => p.flag === 'Critical');
+  useEffect(() => { setIsApproved(false); setApprovalMode(null); }, [reportSnapshot]);
   const [approvalMode, setApprovalMode] = useState<'AUTO_VERIFIED' | 'PATHOLOGIST_SIGNED' | null>(null);
 
   // Step 5: Delivery
@@ -408,9 +421,9 @@ export function RapidResultConsole({
   // Live SLA elapsed timer
   useEffect(() => {
     if (!timerActive) return;
-    const id = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    const id = setInterval(() => setElapsedSeconds(Math.floor((Date.now() - workflowStartedAt) / 1000)), 1000);
     return () => clearInterval(id);
-  }, [timerActive]);
+  }, [timerActive, workflowStartedAt]);
 
   // Fetch Diagnostic Instrument Webhook Inbox
   const refreshInstrumentInbox = async () => {
@@ -448,6 +461,7 @@ export function RapidResultConsole({
     setSelectedPatientId(p.id);
     setPatientName(p.fullName);
     setPatientPhone(p.phone || '');
+    setPatientAge(p.dob ? String(Math.max(0, Math.floor((Date.now() - Date.parse(p.dob)) / 31557600000))) : '');
     const g = (p as any).gender || (p as any).sex;
     setPatientGender(g === 'Female' ? 'Female' : 'Male');
     setPatientAllergies((p.allergies || []).join(', '));
@@ -471,7 +485,9 @@ export function RapidResultConsole({
       return;
     }
 
+    if (quotedFee.trim() && (!Number.isFinite(Number(quotedFee)) || Number(quotedFee) < 0)) { toast.error('Enter a valid quoted test fee or leave it unquoted.'); return; }
     const uid = generateSampleUid();
+    setWorkflowStartedAt(Date.now());
     setSampleUid(uid);
     setElapsedSeconds(0);
     setTimerActive(true);
@@ -579,6 +595,7 @@ export function RapidResultConsole({
       const analysis: AIAnomalyCheckResult = json.analysis;
       setAiReport(analysis);
       setApprovalNotes(analysis.clinicalSummary);
+      setFindingsHtml(textToFindings(analysis.clinicalSummary));
 
       setIsApproved(false);
       setApprovalMode(null);
@@ -593,7 +610,8 @@ export function RapidResultConsole({
 
   // Step 4: Pathologist Sign-off
   const handleSignOff = () => {
-    if (!aiReport || !custodyVerified || !parameters.length || parameters.some(p => !p.value.trim())) {
+    if (!canApproveReport(currentUser, critical) || !approvalMatches(reportApproval, reportSnapshot, currentUser)) { toast.error('Sign this specific report as an authorized reviewer first.'); return; }
+    if (!custodyVerified || !parameters.length || parameters.some(p => !p.value.trim())) {
       toast.error('Complete the sample and result review first.');
       return;
     }
@@ -609,7 +627,8 @@ export function RapidResultConsole({
 
   // Step 5: Instant PDF + WhatsApp Dispatch
   const handleInstantDispatch = async () => {
-    if (!isApproved || approvalMode !== 'PATHOLOGIST_SIGNED' || !custodyVerified || parameters.some(p => !p.value.trim())) {
+    if (dispatchResult) return;
+    if (!approvalMatches(reportApproval, reportSnapshot, currentUser) || !isApproved || approvalMode !== 'PATHOLOGIST_SIGNED' || !custodyVerified || parameters.some(p => !p.value.trim())) {
       toast.error('An approved, complete result is required.');
       return;
     }
@@ -620,6 +639,9 @@ export function RapidResultConsole({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           tenantId: config.tenantId,
+          reportApproval,
+          custodyVerified,
+          clinicalInterpretation: approvalNotes,
           accessionNumber: sampleUid,
           sampleBarcode: sampleUid,
           patientId: selectedPatientId || `walkin-${Date.now()}`,
@@ -634,7 +656,7 @@ export function RapidResultConsole({
           parameters,
           aiAnomalyReport: aiReport,
           validatedBy: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verification' : approvedBy,
-          turnaroundSeconds: Math.max(elapsedSeconds, 45)
+          turnaroundSeconds: Math.max(elapsedSeconds, 1)
         })
       });
 
@@ -649,7 +671,7 @@ export function RapidResultConsole({
         pdfReportNumber: json.pdfReportNumber,
         whatsappUrl: json.whatsappUrl,
         slaMet: json.slaMet,
-        turnaroundSeconds: Math.max(elapsedSeconds, 45)
+        turnaroundSeconds: Math.max(elapsedSeconds, 1)
       });
 
       if (json.whatsappWarning) {
@@ -660,9 +682,9 @@ export function RapidResultConsole({
       }
 
       // Persist to lab worklist & local history
-      const mappedResults: Record<string, { value: string; flag: RapidLabParameter['flag'] }> = {};
+      const mappedResults: Record<string, { value: string; unit?: string; referenceRange?: string; flag: RapidLabParameter['flag'] }> = {};
       parameters.forEach((p) => {
-        mappedResults[p.name] = { value: p.value, flag: p.flag };
+        mappedResults[p.name] = { value: p.value, unit: p.unit, referenceRange: p.referenceRange, flag: p.flag };
       });
 
       onUpdateLabOrder({
@@ -678,13 +700,19 @@ export function RapidResultConsole({
         sampleStatus: 'Sample Collected',
         orderStatus: 'RELEASED',
         results: mappedResults,
-        likelyIssue: aiReport?.likelyDiagnosis || 'Verified Reference Result',
+        likelyIssue: aiReport?.likelyDiagnosis || 'Professional review completed',
         clinicalInterpretation: approvalNotes || aiReport?.clinicalSummary || '',
         validatedByName: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verify' : approvedBy,
         validatedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString(),
-        priceNaira: 5000,
-        billingStatus: 'Paid'
+        createdAt: new Date(workflowStartedAt).toISOString(),
+        priceNaira: quotedFee.trim() ? Number(quotedFee) : 0,
+        pricingStatus: quotedFee.trim() ? 'Quoted' : 'Unquoted',
+        billingStatus: 'Pending',
+        findingsHtml,
+        reportApproval: reportApproval!,
+        reportNumber: json.pdfReportNumber,
+        releasedAt: new Date().toISOString(),
+        patientPhone
       } as any);
 
       if (json.record) {
@@ -693,8 +721,8 @@ export function RapidResultConsole({
         localStorage.setItem('tekilab_rapid_dispatches_v2', JSON.stringify(nextHistory));
       }
 
-      toast.success(`Report ${json.pdfReportNumber} dispatched!`, {
-        description: `Turnaround: ${formatElapsedTime(Math.max(elapsedSeconds, 45))} (${json.slaMet ? 'Within 5–10m SLA' : 'Completed'})`
+      toast.success(`Report ${json.pdfReportNumber} saved; delivery link prepared`, {
+        description: `Turnaround: ${formatElapsedTime(Math.max(elapsedSeconds, 1))} (${json.slaMet ? 'Within 5–10m SLA' : 'Completed'})`
       });
     } catch (err: any) {
       toast.error(err?.message || 'Dispatch failed');
@@ -705,15 +733,17 @@ export function RapidResultConsole({
 
   // Download branded PDF
   const handleDownloadPDF = () => {
-    if (!isApproved || approvalMode !== 'PATHOLOGIST_SIGNED') { toast.error('Approve the result first.'); return; }
-    const mappedResults: Record<string, { value: string; flag: string }> = {};
+    if (!approvalMatches(reportApproval, reportSnapshot, currentUser) || !isApproved || approvalMode !== 'PATHOLOGIST_SIGNED') { toast.error('Approve the result first.'); return; }
+    const mappedResults: Record<string, { value: string; unit?: string; referenceRange?: string; flag: string }> = {};
     parameters.forEach((p) => {
-      mappedResults[p.name] = { value: `${p.value} ${p.unit || ''}`.trim(), flag: p.flag };
+      mappedResults[p.name] = { value: p.value, unit: p.unit, referenceRange: p.referenceRange, flag: p.flag };
     });
 
     generateLabReportPDF(
       {
         id: sampleUid,
+        reportApproval,
+        reportNumber: dispatchResult?.pdfReportNumber,
         accessionNumber: sampleUid,
         patientName: patientName || 'Walk-in Patient',
         mrn: selectedPatientId || 'WALK-IN',
@@ -722,65 +752,24 @@ export function RapidResultConsole({
         sampleType,
         orderStatus: 'RELEASED',
         results: mappedResults,
-        likelyIssue: aiReport?.likelyDiagnosis || 'Normal Reference Values',
+        likelyIssue: aiReport?.likelyDiagnosis || 'Professional review completed',
         clinicalInterpretation: approvalNotes || aiReport?.clinicalSummary || '',
         validatedByName: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verification' : approvedBy,
         validatedAt: new Date().toISOString(),
         createdAt: new Date().toISOString()
       } as any,
-      {
-        name: config.facilityName || 'TekiLab Medical Laboratory',
-        logoUrl: companyLogo
-      }
+      patients.find(p => p.id === selectedPatientId),
+      companyLogo
     );
     toast.success('Official TekiLab PDF Report downloaded');
   };
 
   // Direct Diagnostic-to-Pharmacy Handoff (works even when Pharmacy UI is muted!)
-  const handlePharmacyHandoff = async () => {
-    toast.info('Medication requests must be reviewed and prescribed by an authorized clinician.');
-    return;
-    if (!aiReport?.aiSuggestedDrug) {
-      toast.info('No medication suggestion attached to this normal result.');
-      return;
-    }
-    setIsHandingOffRx(true);
-    try {
-      const result = await handoffLabResultToPharmacyQueue(
-        {
-          tenantId: config.tenantId,
-          patientId: selectedPatientId || 'walk-in',
-          patientName: patientName || 'Walk-in Patient',
-          patientMrn: selectedPatientId || 'WALK-IN',
-          patientPhone,
-          labResultId: sampleUid,
-          accessionNumber: sampleUid,
-          testName: selectedPanel.name,
-          testResultSummary: parameters.map((p) => `${p.name}: ${p.value} ${p.unit}`).join('; '),
-          aiReport,
-          validatedBy: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verify' : approvedBy
-        },
-        config
-      );
-
-      if (result.ok && result.payload) {
-        setRxHandoffResult({
-          handoffId: result.payload.handoffId,
-          deliveryMode: result.deliveryMode || (isPharmacyActive ? 'PHARMACY_POS_QUEUE' : 'BACKGROUND_E_PRESCRIPTION'),
-          message: result.message
-        });
-        toast.success(result.message);
-      } else {
-        toast.error(result.message);
-      }
-    } finally {
-      setIsHandingOffRx(false);
-    }
-  };
-
   // Start Next Rapid Sample
   const handleResetWorkflow = () => {
     setStep(1);
+    setWorkflowStartedAt(Date.now()); setQuotedFee('');
+    setFindingsHtml(''); setApprovalNotes(''); setReportApproval(null);
     setSelectedPatientId('');
     setPatientName('');
     setPatientPhone('');
@@ -1123,6 +1112,11 @@ export function RapidResultConsole({
               )}
             </div>
 
+            <div className="space-y-1.5">
+              <label className="text-xs font-semibold text-neutral-700">Quoted test fee (NGN, optional)</label>
+              <Input aria-label="Quoted test fee" type="number" min="0" step="0.01" value={quotedFee} onChange={e => setQuotedFee(e.target.value)} placeholder="Leave blank until the fee is confirmed" />
+              <p className="text-xs text-neutral-500">A confirmed quote creates an unpaid charge when the report is saved. Unquoted tests remain pending pricing.</p>
+            </div>
             <div className="pt-4 border-t border-neutral-100 flex items-center justify-between gap-4">
               <div className="text-xs text-neutral-500">
                 Selected: <span className="font-semibold text-neutral-950">{selectedPanel.name}</span>
@@ -1157,7 +1151,7 @@ export function RapidResultConsole({
               <div className="flex items-start justify-between gap-4">
                 <div className="space-y-1">
                   <div className="text-[10px] font-bold uppercase tracking-widest text-neutral-400">
-                    TekiLab ISO Specimen UID
+                    TekiLab Specimen UID
                   </div>
                   <div className="text-xl font-mono font-extrabold text-neutral-950 tracking-tight">
                     {sampleUid}
@@ -1165,8 +1159,8 @@ export function RapidResultConsole({
                   <div className="text-sm font-semibold text-neutral-900">{patientName || 'Walk-in Patient'}</div>
                   <div className="text-xs text-neutral-600">{selectedPanel.name}</div>
                 </div>
-                <div className="w-16 h-16 rounded-xl bg-white border border-neutral-200 flex items-center justify-center shrink-0">
-                  <QrCode className="w-11 h-11 text-neutral-950" />
+                <div className="w-24 h-24 rounded-xl bg-white border border-neutral-200 flex items-center justify-center shrink-0">
+                  <SpecimenCode value={sampleUid} />
                 </div>
               </div>
 
@@ -1195,13 +1189,12 @@ export function RapidResultConsole({
               <Button
                 variant="outline"
                 onClick={() => {
-                  window.print();
-                  toast.success('Sent specimen label to thermal printer');
+                  downloadSpecimenLabel(sampleUid, patientName, selectedPanel.name).catch(() => toast.error('Could not generate the specimen label.'));
                 }}
                 className="h-10 rounded-xl border-neutral-200"
               >
                 <Printer className="w-4 h-4 mr-1.5" />
-                Print Label
+                Download Label
               </Button>
             </div>
           </div>
@@ -1326,7 +1319,7 @@ export function RapidResultConsole({
               <div>
                 <h2 className="text-base font-bold text-neutral-950">3. Enter Results — {selectedPanel.name}</h2>
                 <p className="text-xs text-neutral-500">
-                  Enter numeric measurements or tap quick qualitative buttons; run TekiLab AI for instant validation &amp; prescription suggestion.
+                  Enter measured results, then review manually or request an advisory check. Human approval is always required.
                 </p>
               </div>
               <Button
@@ -1453,7 +1446,8 @@ export function RapidResultConsole({
               </table>
             </div>
 
-            <div className="pt-3 border-t border-neutral-100 flex items-center justify-between">
+            <div className="pt-3 border-t border-neutral-100 flex flex-wrap gap-2 items-center justify-between">
+              <Button variant="outline" onClick={() => { if (!custodyVerified || !parameters.length || parameters.some(p => !p.value.trim())) { toast.error('Enter every measured result and verify sample custody first.'); return; } setStep(4); }}>Review without AI</Button>
               <Button variant="ghost" onClick={() => setStep(2)} className="rounded-xl text-neutral-600">
                 <ArrowLeft className="w-4 h-4 mr-1.5" />
                 Back to Sample
@@ -1531,13 +1525,15 @@ export function RapidResultConsole({
               </div>
             )}
 
+            <Button variant="outline" onClick={() => generateAIReviewPDF({ accessionNumber: sampleUid, testName: selectedPanel.name, parameters, analysis: aiReport, notes: approvalNotes })}>Download detailed review worksheet</Button>
+            <p className="text-xs text-amber-800">AI output is advisory. It cannot approve reports or prescribe medication. Review every observation independently.</p>
             {/* AI-Suggested Prescription Protocol */}
             {aiReport?.aiSuggestedDrug && (
               <div className="p-4 rounded-xl border border-blue-200 bg-blue-50/50 space-y-2">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 text-xs font-bold text-blue-700">
                     <Pill className="w-4 h-4" />
-                    AI-Suggested Evidence-Based Prescription
+                    AI medication suggestion — requires clinician review
                   </div>
                   <span className="text-[11px] font-mono text-neutral-500">
                     {isPharmacyActive ? 'Pharmacy POS Active' : 'Backend e-Rx Ready'}
@@ -1593,12 +1589,8 @@ export function RapidResultConsole({
 
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Clinical Interpretation Note</label>
-                <textarea
-                  value={approvalNotes}
-                  onChange={(e) => setApprovalNotes(e.target.value)}
-                  rows={4}
-                  className="w-full rounded-xl border border-neutral-200 p-3 text-xs text-neutral-800 focus:outline-none focus:ring-2 focus:ring-blue-600/20"
-                />
+                <FindingsEditor label="Rapid test findings" value={findingsHtml || textToFindings(approvalNotes)} onChange={(html, text) => { setFindingsHtml(html); setApprovalNotes(text); }} />
+                <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, critical) && custodyVerified && parameters.every(p => p.value.trim())} onApprove={setReportApproval} />
               </div>
             </div>
 
@@ -1681,9 +1673,9 @@ export function RapidResultConsole({
                 <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center">
                   <MessageSquare className="w-5 h-5" />
                 </div>
-                <h3 className="text-sm font-bold text-neutral-950">WhatsApp &amp; SMS Instant Dispatch</h3>
+                <h3 className="text-sm font-bold text-neutral-950">Save Report &amp; Prepare Notification</h3>
                 <p className="text-xs text-neutral-600">
-                  Log turnaround SLA, archive result to database, and send patient-friendly report via WhatsApp.
+                  Save the approved report locally and prepare a notification link. Opening a link does not confirm delivery.
                 </p>
               </div>
               {dispatchResult ? (
@@ -1692,12 +1684,13 @@ export function RapidResultConsole({
                     ✓ {dispatchResult.pdfReportNumber} · TAT {formatElapsedTime(dispatchResult.turnaroundSeconds)}
                   </div>
                   <a
+                    hidden={!dispatchResult.whatsappUrl}
                     href={dispatchResult.whatsappUrl}
                     target="_blank"
                     rel="noreferrer"
                     className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
                   >
-                    Open WhatsApp Dispatch
+                    Open WhatsApp Notification
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>
                 </div>
@@ -1708,52 +1701,15 @@ export function RapidResultConsole({
                   className="w-full h-10 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
                 >
                   <Send className="w-4 h-4 mr-2" />
-                  {isDispatching ? 'Dispatching...' : 'Finalize & Dispatch Now'}
+                  {isDispatching ? 'Saving…' : 'Save Approved Report'}
                 </Button>
               )}
             </div>
 
-            {/* Action 3: Direct Diagnostic-to-Pharmacy Prescription Handoff */}
-            <div className="p-5 rounded-2xl border border-neutral-200 bg-white flex flex-col justify-between space-y-4">
-              <div className="space-y-1.5">
-                <div className="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-                  <Pill className="w-5 h-5" />
-                </div>
-                <h3 className="text-sm font-bold text-neutral-950">
-                  {isPharmacyActive ? 'Dispatch to Pharmacy POS Queue' : 'Generate Backend e-Prescription'}
-                </h3>
-                <p className="text-xs text-neutral-500">
-                  {aiReport?.aiSuggestedDrug
-                    ? `${aiReport.aiSuggestedDrug.drugName} (${aiReport.aiSuggestedDrug.dosage}) — backend hook stays active even when Pharmacy UI is muted.`
-                    : 'No drug protocol required for normal baseline result.'}
-                </p>
-              </div>
-              {rxHandoffResult ? (
-                <div className="space-y-2">
-                  <div className="text-[11px] font-mono text-neutral-700 font-semibold">
-                    ✓ {rxHandoffResult.handoffId} ({rxHandoffResult.deliveryMode === 'PHARMACY_POS_QUEUE' ? 'Queued in POS' : 'Saved e-Rx'})
-                  </div>
-                  {isPharmacyActive && (
-                    <Button
-                      variant="outline"
-                      onClick={() => onNavigate?.('pos')}
-                      className="w-full h-9 rounded-xl border-neutral-200 text-xs"
-                    >
-                      Open Pharmacy POS
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <Button
-                  onClick={handlePharmacyHandoff}
-                  disabled
-                  className="w-full h-10 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white font-semibold disabled:opacity-40"
-                >
-                  <Pill className="w-4 h-4 mr-2 text-blue-400" />
-                  {isHandingOffRx ? 'Sending Script...' : 'Requires Doctor Review'}
-                </Button>
-              )}
-            </div>
+<div className="p-5 rounded-2xl border border-neutral-200 space-y-3">
+  <h3 className="font-semibold text-sm">Clinician follow-up</h3>
+  <p className="text-xs text-neutral-600">Saving this report adds it to the doctor’s results queue. Medication requires an independent consultation and prescription.</p>
+</div>
           </div>
         </div>
       )}

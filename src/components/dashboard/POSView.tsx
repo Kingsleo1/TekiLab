@@ -54,6 +54,9 @@ import {
 import { toast } from 'sonner';
 import { apiService } from '../../services/api';
 import { OrderItem, Product, PaymentMethod } from '../../types/pharmacy';
+import { PharmacyHandoffQueueBar } from './PharmacyHandoffQueueBar';
+import { ClinicianHandoff, updatePharmacyHandoffStatus } from '../../lib/cross-module-handoff';
+import { useTenantModules } from '../../context/TenantModuleContext';
 import { CustomerSelectInput } from './CustomerSelectInput';
 import { calculateItemPrice } from '../../lib/pricing';
 import { Html5QrcodeScanner } from 'html5-qrcode';
@@ -171,6 +174,24 @@ export function POSView({ selectedBranchId = 'pharma-1' }: { selectedBranchId?: 
 
   const [searchQuery, setSearchQuery] = useState('');
   const [availableProducts, setAvailableProducts] = useState<Product[]>([]);
+  const { config: tenantConfig } = useTenantModules();
+  const [linkedPrescriptions, setLinkedPrescriptions] = useState<ClinicianHandoff[]>([]);
+  const loadPrescription = (raw: any, dryRun = false): boolean => {
+    const rx = raw as ClinicianHandoff;
+    if (rx.source !== 'CLINICIAN_PRESCRIPTION' || !rx.prescriberId) { toast.error('A clinician-approved prescription is required.'); return false; }
+    if (items.length && customer.id !== rx.patientId) { toast.error('Complete or clear the current patient cart first.'); return false; }
+    const product = availableProducts.find(p => p.id === rx.productId);
+    if (!product || product.pharmacyId !== selectedBranchId) { toast.error('Prescribed product is not linked to this branch stock. Ask the clinician to select an inventory item.'); return false; }
+    const controlled = (product as any).isControlled || /controlled/i.test(product.category || '');
+    if (controlled && currentUser?.role !== 'Kernel Admin' && !currentUser?.permissions?.includes('canDispenseControlled')) { toast.error('Controlled-drug dispensing permission required.'); return false; }
+    const quantity = rx.aiSuggestedDrug.quantity;
+    if (!Number.isInteger(quantity) || quantity < 1 || quantity > product.stock || items.some(i => i.productId === product.id)) { toast.error('Verify prescribed quantity, available stock and duplicate cart items.'); return false; }
+    if (dryRun) return true;
+    setItems(prev => [...prev, { productId: product.id, name: product.name, price: product.price, quantity, unit: product.baseUnit, packageSize: 'Full Pack', saleType: globalSaleType }]);
+    setCustomer({ id: rx.patientId, name: rx.patientName });
+    setLinkedPrescriptions(prev => [...prev, rx]);
+    return true;
+  };
   const [isCheckoutOpen, setCheckoutOpen] = useState(false);
   const [isScannerOpen, setScannerOpen] = useState(false);
   const [isOrderHistoryOpen, setOrderHistoryOpen] = useState(false);
@@ -795,6 +816,16 @@ export function POSView({ selectedBranchId = 'pharma-1' }: { selectedBranchId?: 
         toast.success('Sale Completed Successfully!');
       }
 
+      if (checkoutSucceededOnline) {
+        for (const rx of linkedPrescriptions) {
+          const sold = items.find(i => i.productId === rx.productId);
+          if (customer.id === rx.patientId && sold?.quantity === rx.aiSuggestedDrug.quantity) {
+            try { await updatePharmacyHandoffStatus(rx.handoffId, 'DISPENSED', tenantConfig.tenantId); }
+            catch { toast.warning('Sale saved. Prescription status needs reconciliation in the pharmacy queue.'); }
+          }
+        }
+      }
+      setLinkedPrescriptions([]);
       setLastOrder(order);
       setItems([]);
       setEnableVAT(false);
@@ -826,6 +857,7 @@ export function POSView({ selectedBranchId = 'pharma-1' }: { selectedBranchId?: 
 
   return (
     <div className="flex flex-col h-[calc(100dvh-4.2rem)] sm:h-[calc(100dvh-5rem)] lg:h-auto lg:grid lg:grid-cols-12 lg:gap-6 lg:items-start animate-in fade-in duration-500 p-0 sm:p-1 overflow-hidden lg:overflow-visible">
+      <div className="lg:col-span-12 shrink-0 max-h-64 overflow-auto"><PharmacyHandoffQueueBar onLoadSuggestionToCart={loadPrescription} /></div>
       {/* Mobile Top Navigation Tabs */}
       <div className="lg:hidden flex items-center justify-between gap-1 p-1 mb-1.5 bg-slate-900 text-white rounded-xl shadow-xs shrink-0">
         <button

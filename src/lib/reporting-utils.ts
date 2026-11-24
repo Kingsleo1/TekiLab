@@ -179,211 +179,65 @@ export const generateBrandedPDF = async (
   doc.save(`${fileName}_${format(new Date(), 'yyyyMMdd')}.pdf`);
 };
 
-// 2. LIMS Laboratory Result Report PDF with Logo
-export const generateLabReportPDF = async (order: any, patient: any, logoUrl?: string) => {
+// Clinical PDFs contain only entered measurements and approved findings.
+async function buildDiagnosticPDF(order: any, patient: any, logoUrl: string | undefined, imaging: boolean) {
+  const released = order.orderStatus === (imaging ? 'Released' : 'RELEASED');
+  const approved = released && order.reportApproval;
   const doc = new jsPDF();
-  await drawHeaderWithLogo(doc, 'Teki Med Clinical Diagnostics', 'ISO 15189 Certified Pathology Laboratory', logoUrl || '/logo.png?v=4');
-
-  // Report Banner
-  doc.setFillColor(241, 245, 249); // slate-100
-  doc.roundedRect(14, 29, 182, 10, 2, 2, 'F');
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text('LABORATORY INVESTIGATION REPORT', 18, 35.5);
-  doc.setTextColor(147, 51, 234); // purple-600
-  doc.text(`ACCESSION #: ${order.accessionNumber || 'ACC-2026-001'}`, 190, 35.5, { align: 'right' });
-
-  const patientPhone = patient?.phone || patient?.whatsapp || order.patientPhone || '+234 803 123 4567';
-
-  // Patient Info Box
-  autoTable(doc, {
-    startY: 42,
-    body: [
-      [
-        { content: `Patient Name: ${patient?.fullName || order.patientName}`, styles: { fontStyle: 'bold' } },
-        `MRN: ${patient?.mrn || order.mrn || 'N/A'}`,
-        `Age/Sex: ${patient?.dob ? `${new Date().getFullYear() - new Date(patient.dob).getFullYear()} yrs` : '38 yrs'} / ${patient?.sex || 'Male'}`
-      ],
-      [
-        `Sample Type: ${order.sampleType || 'Venous Blood'}`,
-        `Phone/WhatsApp: ${patientPhone}`,
-        `Report No: ${order.reportNumber || 'TM-LAB-2026-8801'}`
-      ]
-    ],
-    theme: 'plain',
-    styles: { fontSize: 8, cellPadding: 2, textColor: [51, 65, 85] },
-    margin: { left: 14, right: 14 },
-  });
-
-  // Test Results Table Data Preparation
-  let resultRows: any[] = [];
-  if (Array.isArray(order.results)) {
-    resultRows = order.results.map((r: any) => [
-      r.parameterName || r.name || 'Parameter',
-      `${r.value || ''} ${r.unit || ''}`,
-      r.referenceRange || 'N/A',
-      r.flag === 'HIGH' || r.flag === 'CRITICAL' || r.flag === 'High' || r.flag === 'Critical' ? `⚠️ ${r.flag}` : r.flag === 'LOW' || r.flag === 'Low' ? `⬇️ LOW` : (r.flag || 'NORMAL')
-    ]);
-  } else if (order.results && typeof order.results === 'object') {
-    resultRows = Object.entries(order.results).map(([paramName, data]: [string, any]) => [
-      paramName,
-      `${data.value || ''} ${data.unit || ''}`,
-      data.referenceRange || 'N/A',
-      data.flag === 'HIGH' || data.flag === 'CRITICAL' || data.flag === 'High' || data.flag === 'Critical' ? `⚠️ ${data.flag}` : data.flag === 'LOW' || data.flag === 'Low' ? `⬇️ LOW` : (data.flag || 'NORMAL')
-    ]);
+  await drawHeaderWithLogo(doc, 'TekiLab Diagnostics', approved ? 'Approved diagnostic report' : 'DRAFT - NOT FOR CLINICAL USE', logoUrl);
+  const identity = [
+    ['Patient', patient?.fullName || order.patientName || 'Not recorded'],
+    ['MRN', patient?.mrn || order.mrn || 'Not recorded'],
+    ['Test', order.testName || 'Not recorded'],
+    ['Report / accession', order.reportNumber || order.accessionNumber || order.id],
+    ['Status', approved ? 'Professionally reviewed and approved' : 'DRAFT - approval required']
+  ];
+  autoTable(doc, { startY: 32, body: identity, theme: 'plain', styles: { fontSize: 9 }, margin: { bottom: 24 } });
+  if (!imaging) {
+    const results = Array.isArray(order.results) ? order.results.map((r: any) => [r.parameterName || r.name, r.value, r.unit || '', r.referenceRange || 'Not recorded', r.flag || 'Not recorded']) :
+      Object.entries(order.results || {}).map(([name,r]: [string,any]) => [name, String(r.value ?? ''), r.unit || '', r.referenceRange || 'Not recorded', r.flag || 'Not recorded']);
+    autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, head: [['Parameter','Measured value','Unit','Reference interval','Flag']], body: results, styles: { fontSize: 8 }, margin: { bottom: 24 } });
   }
-
-  if (resultRows.length === 0) {
-    resultRows = [
-      [order.testName || 'Full Blood Count', `${order.resultValue || '13.8 g/dL'}`, '12.0 - 16.0 g/dL', 'NORMAL']
-    ];
+  const sections = imaging ? [['Clinical indication', order.clinicalIndication], ['Technique',order.techniqueNotes], ['Findings', order.findingsNotes || order.findings], ['Impression',order.impressionNotes || order.impression], ['Recommendations',order.recommendationsNotes]] :
+    [['Finding / impression',order.likelyIssue], ['Professional findings and interpretation',order.clinicalInterpretation || order.notes]];
+  autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, body: sections.map(([label,value]) => [label, value || 'Not recorded']), theme: 'grid', styles: { fontSize: 9, overflow: 'linebreak' }, columnStyles: { 0: { cellWidth: 45 } }, margin: { bottom: 24 } });
+  if (approved) {
+    let y = (doc as any).lastAutoTable.finalY + 8;
+    if (y > 228) { doc.addPage(); y = 25; }
+    doc.addImage(order.reportApproval.signaturePng, 'PNG', 14, y, 65, 18);
+    doc.setFontSize(8);
+    doc.text('Approved by: ' + order.reportApproval.signerName, 14, y + 24);
+    doc.text('Signed: ' + order.reportApproval.signedAt, 14, y + 29);
+    doc.text('Content SHA-256: ' + order.reportApproval.reportDigest, 14, y + 34);
   }
+  attachFooterWithSign(doc, order.reportNumber || order.accessionNumber || order.id, approved ? order.reportApproval.signerName : 'DRAFT - unsigned');
+  doc.save((approved ? '' : 'DRAFT_') + (imaging ? 'Radiology_' : 'Laboratory_') + (order.reportNumber || order.accessionNumber || order.id) + '.pdf');
+}
+export const generateLabReportPDF = (order: any, patient: any, logoUrl?: string) => buildDiagnosticPDF(order, patient, logoUrl, false);
+export const generateRadiologyReportPDF = (order: any, patient: any, logoUrl?: string) => buildDiagnosticPDF(order, patient, logoUrl, true);
 
-  autoTable(doc, {
-    startY: (doc as any).lastAutoTable.finalY + 4,
-    head: [['Test Parameter', 'Measured Result', 'Biological Reference Interval', 'Status Flag']],
-    body: resultRows,
-    theme: 'striped',
-    headStyles: { fillColor: [147, 51, 234], textColor: [255, 255, 255], fontStyle: 'bold', fontSize: 9 },
-    bodyStyles: { fontSize: 8.5 },
-    margin: { left: 14, right: 14 },
-  });
-
-  let currentY = (doc as any).lastAutoTable.finalY + 6;
-
-  // Likely Diagnosis / Issue Highlight
-  if (order.likelyIssue || order.likelyDiagnosis) {
-    doc.setFillColor(250, 245, 255); // purple-50
-    doc.roundedRect(14, currentY, 182, 12, 2, 2, 'F');
-    doc.setDrawColor(216, 180, 254);
-    doc.roundedRect(14, currentY, 182, 12, 2, 2, 'S');
-
-    doc.setFontSize(8.5);
-    doc.setFont('helvetica', 'bold');
-    doc.setTextColor(126, 34, 206);
-    doc.text('Likely Diagnostic Finding / Issue:', 18, currentY + 7.5);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(15, 23, 42);
-    doc.text(String(order.likelyIssue || order.likelyDiagnosis), 75, currentY + 7.5);
-
-    currentY += 16;
-  }
-
-  // Scientist Notes & Verification Stamp
-  doc.setFillColor(248, 250, 252);
-  doc.roundedRect(14, currentY, 182, 22, 2, 2, 'F');
-  doc.setDrawColor(226, 232, 240);
-  doc.roundedRect(14, currentY, 182, 22, 2, 2, 'S');
-
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text('Pathologist & Microbiologist Remarks:', 18, currentY + 5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(71, 85, 105);
-  const remarksText = order.clinicalInterpretation || order.notes || 'Results verified against internal controls and standard calibration curves. No panic values detected.';
-  const splitRemarks = doc.splitTextToSize(remarksText, 138);
-  doc.text(splitRemarks, 18, currentY + 10);
-
-  doc.setFont('helvetica', 'bold');
-  doc.text(`Validated by: ${order.validatedByName || order.validatedBy || 'Dr. Samuel Vance, MLS (MLSCN #4892)'}`, 18, currentY + 18);
-
-  // QR Code Verification Graphic
-  doc.setDrawColor(147, 51, 234);
-  doc.setFillColor(250, 245, 255);
-  doc.roundedRect(162, currentY + 2, 30, 18, 2, 2, 'FD');
-  doc.setFontSize(6);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(147, 51, 234);
-  doc.text('AUTHENTICATED', 177, currentY + 8, { align: 'center' });
-  doc.text('QR VERIFIED', 177, currentY + 13, { align: 'center' });
-
-  attachFooterWithSign(doc, order.accessionNumber || 'LIMS-REPORT', order.validatedByName || order.validatedBy || 'Senior Lab Pathologist');
-  doc.save(`LabReport_${order.accessionNumber || 'Result'}.pdf`);
-};
-
-// 3. Radiology Diagnostic Report PDF with Logo
-export const generateRadiologyReportPDF = async (order: any, patient: any, logoUrl?: string) => {
+export async function generateAIReviewPDF(data: any) {
   const doc = new jsPDF();
-  await drawHeaderWithLogo(doc, 'Teki Med Diagnostic Imaging', 'Radiology & Sonography Center', logoUrl);
-
-  // Title Box
-  doc.setFillColor(239, 246, 255); // blue-50
-  doc.roundedRect(14, 29, 182, 10, 2, 2, 'F');
-  doc.setFontSize(11);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(29, 78, 216);
-  doc.text('RADIOLOGY & DIAGNOSTIC IMAGING REPORT', 18, 35.5);
-
-  // Patient Info
-  autoTable(doc, {
-    startY: 42,
-    body: [
-      [
-        { content: `Patient: ${patient?.fullName || order.patientName}`, styles: { fontStyle: 'bold' } },
-        `MRN: ${patient?.mrn || order.mrn}`,
-        `Modality: ${order.modality || 'X-Ray'}`
-      ],
-      [
-        `Body Site: ${order.bodySite || 'Chest PA'}`,
-        `Exam Date: ${order.createdAt ? format(new Date(order.createdAt), 'PP') : 'Today'}`,
-        `Accession #: ${order.id}`
-      ]
-    ],
-    theme: 'plain',
-    styles: { fontSize: 8, cellPadding: 2, textColor: [51, 65, 85] },
-    margin: { left: 14, right: 14 },
-  });
-
-  let currentY = (doc as any).lastAutoTable.finalY + 6;
-
-  // Imaging Findings Section
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text('RADIOLOGICAL FINDINGS:', 14, currentY);
-
-  currentY += 4;
-  doc.setFontSize(8.5);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(51, 65, 85);
-  const findingsText = order.findings || 'Chests fields demonstrate normal lung expansion without focal pulmonary consolidation, pleural effusion, or pneumothorax. Cardiomediastinal silhouette is within normal limits for age. Osseous structures are intact.';
-  const splitFindings = doc.splitTextToSize(findingsText, 182);
-  doc.text(splitFindings, 14, currentY);
-
-  currentY += (splitFindings.length * 4) + 6;
-
-  // Diagnostic Impression Section
-  doc.setFontSize(10);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(29, 78, 216);
-  doc.text('IMPRESSION / CONCLUSION:', 14, currentY);
-
-  currentY += 4;
-  doc.setFontSize(8.5);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  const impressionText = order.impression || 'Unremarkable radiological exam of the designated region. No acute cardiopulmonary or structural abnormalities.';
-  const splitImp = doc.splitTextToSize(impressionText, 182);
-  doc.text(splitImp, 14, currentY);
-
-  currentY += (splitImp.length * 4) + 12;
-
-  // Radiologist Signature Block
-  doc.setDrawColor(226, 232, 240);
-  doc.line(14, currentY, 90, currentY);
-  doc.setFontSize(8);
-  doc.setFont('helvetica', 'bold');
-  doc.setTextColor(15, 23, 42);
-  doc.text(order.radiologistName || 'Dr. Amanda Chen, MBBS, FWACS (Radiology)', 14, currentY + 4);
-  doc.setFont('helvetica', 'normal');
-  doc.setTextColor(100, 116, 139);
-  doc.text('Consultant Radiologist & Imaging Specialist', 14, currentY + 8);
-
-  attachFooterWithSign(doc, order.id, order.radiologistName || 'Consultant Radiologist');
-  doc.save(`RadiologyReport_${order.id}.pdf`);
-};
+  doc.setFontSize(16); doc.text('TekiLab - diagnostic review worksheet', 14, 20);
+  autoTable(doc, { startY: 28, body: [
+    ['Review status', 'ADVISORY ONLY - professional review mandatory; not a prescription'],
+    ['Accession', data.accessionNumber], ['Test', data.testName],
+    ['Review source', data.analysis?.model || 'Manual review - no AI'],
+    ['Generated', data.analysis?.checkedAt || new Date().toISOString()],
+    ['Interpretation', data.analysis?.clinicalSummary || 'No AI interpretation requested.'],
+    ['Reviewer findings', data.notes || 'Not recorded']
+  ], styles: { fontSize: 9 }, margin: { bottom: 24 } });
+  autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, head: [['Measurement','Value','Unit','Reference','Recorded flag']],
+    body: data.parameters.map((p: any) => [p.name,p.value,p.unit,p.referenceRange,p.flag]), styles: { fontSize: 8 }, margin: { bottom: 24 } });
+  const deviations = data.analysis?.flaggedParameters || [];
+  if (deviations.length) autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, head: [['Flagged parameter','Deviation','Review note']],
+    body: deviations.map((p: any) => [p.parameter,p.deviation,p.clinicalNote]), styles: { fontSize: 8 }, margin: { bottom: 24 } });
+  if (data.analysis?.aiSuggestedDrug) autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6,
+    body: [['UNAPPROVED AI medication suggestion', JSON.stringify(data.analysis.aiSuggestedDrug)],['Required next step','An authorized clinician must independently assess and prescribe; do not dispense from this worksheet.']],
+    styles: { fontSize: 8 }, margin: { bottom: 24 } });
+  attachFooterWithSign(doc, data.accessionNumber, 'Advisory worksheet - unsigned');
+  doc.save('Review_' + data.accessionNumber + '.pdf');
+}
 
 // 4. Clinical EMR Consultation Summary PDF with Logo
 export const generateClinicalEncounterPDF = async (encounter: any, patient: any, logoUrl?: string) => {
@@ -406,7 +260,7 @@ export const generateClinicalEncounterPDF = async (encounter: any, patient: any,
         `Consultation Date: ${format(new Date(encounter.createdAt || Date.now()), 'PP p')}`
       ],
       [
-        `Attending Doctor: ${encounter.doctorName || 'Dr. Evelyn Vance'}`,
+        `Attending Doctor: ${encounter.doctorName || 'Not recorded'}`,
         `Specialty: General Clinical Medicine`,
         `Encounter ID: ${encounter.id}`
       ]
@@ -448,7 +302,7 @@ export const generateClinicalEncounterPDF = async (encounter: any, patient: any,
   doc.setFontSize(8.5);
   doc.setFont('helvetica', 'normal');
   doc.setTextColor(51, 65, 85);
-  const notes = encounter.notes || encounter.chiefComplaint || 'Patient presents with mild fever, malaise and general body pain for 3 days. Physical examination shows no neck stiffness or chest distress.';
+  const notes = encounter.notes || encounter.chiefComplaint || 'Not recorded';
   const splitNotes = doc.splitTextToSize(notes, 182);
   doc.text(splitNotes, 14, currentY);
 
@@ -458,7 +312,7 @@ export const generateClinicalEncounterPDF = async (encounter: any, patient: any,
   doc.setFontSize(9.5);
   doc.setFont('helvetica', 'bold');
   doc.setTextColor(22, 101, 52);
-  doc.text(`DIAGNOSIS (ICD-10): ${encounter.diagnosis || 'Acute Unspecified Upper Respiratory Tract Infection (J06.9)'}`, 14, currentY);
+  doc.text(`DIAGNOSIS (ICD-10): ${encounter.primaryDiagnosis || encounter.diagnosis || 'Not recorded'}`, 14, currentY);
 
   currentY += 8;
 
@@ -480,7 +334,15 @@ export const generateClinicalEncounterPDF = async (encounter: any, patient: any,
     });
   }
 
-  attachFooterWithSign(doc, encounter.id, encounter.doctorName || 'Dr. Evelyn Vance');
+  if (encounter.reportApproval && encounter.status === 'Completed') {
+    const approval = encounter.reportApproval;
+    let y = Math.max(currentY + 10, ((doc as any).lastAutoTable?.finalY || 0) + 10);
+    if (y > 225) { doc.addPage(); y = 25; }
+    doc.addImage(approval.signaturePng, 'PNG', 14, y, 65, 18);
+    doc.setFontSize(8); doc.text('Signed by ' + approval.signerName + ' at ' + approval.signedAt,14,y+24);
+    doc.text('Content SHA-256: ' + approval.reportDigest,14,y+30);
+  }
+  attachFooterWithSign(doc, encounter.id, encounter.reportApproval?.signerName || 'DRAFT - unsigned');
   doc.save(`ClinicalEncounter_${encounter.id}.pdf`);
 };
 

@@ -36,6 +36,7 @@ interface HospitalQueueManagerProps {
   queueTickets: any[];
   patients: PatientRecord[];
   onIssueTicket: (ticket: any) => void;
+  onTransferTicket: (ticketId: string, department: string) => void;
   onUpdateTicketStatus: (ticketId: string, status: string) => void;
   currentUser?: any;
 }
@@ -71,6 +72,7 @@ export function HospitalQueueManager({
   queueTickets,
   patients,
   onIssueTicket,
+  onTransferTicket,
   onUpdateTicketStatus
 }: HospitalQueueManagerProps) {
   const { notifyTransfer, notifyOrderArrival } = useNotifications();
@@ -83,6 +85,7 @@ export function HospitalQueueManager({
 
   // New Ticket Form
   const [patientName, setPatientName] = useState('');
+  const [patientId, setPatientId] = useState('');
   const [orderSource, setOrderSource] = useState<'WALK_IN' | 'ONLINE'>('WALK_IN');
   const [department, setDepartment] = useState<TekiLabDepartment>('Laboratory');
   const [notes, setNotes] = useState('');
@@ -113,18 +116,20 @@ export function HospitalQueueManager({
 
   const handleCreateTicket = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!patientName.trim()) {
-      toast.error('Enter patient name to issue a queue ticket.');
+    const selectedPatient = patients.find(p => p.id === patientId);
+    if (!selectedPatient) {
+      toast.error('Select a registered patient before checking in.');
       return;
     }
 
+    if (queueTickets.some(t => t.patientId === selectedPatient!.id && t.department === department && !['Completed','Cancelled'].includes(t.status))) { toast.info('This patient is already active in that department queue.'); return; }
     const prefix = orderSource === 'ONLINE' ? 'ONL' : 'WLK';
     const ticket = {
       id: `q-${Date.now()}`,
       ticketNumber: `${prefix}-${Math.floor(100 + Math.random() * 899)}`,
-      patientId: `pat-${Date.now()}`,
-      patientName: patientName.trim(),
-      mrn: `TK-${Math.floor(10000 + Math.random() * 89999)}`,
+      patientId: selectedPatient!.id,
+      patientName: selectedPatient!.fullName,
+      mrn: selectedPatient!.mrn,
       department,
       orderSource,
       status: 'Waiting',
@@ -140,13 +145,13 @@ export function HospitalQueueManager({
       testSummary: `${ticket.department} Queue (${ticket.ticketNumber})`
     });
     setIsIssueOpen(false);
-    setPatientName('');
+    setPatientName(''); setPatientId('');
     setNotes('');
   };
 
   const handleTransferTicket = () => {
     if (!selectedTicket) return;
-    onUpdateTicketStatus(selectedTicket.id, 'In Progress');
+    onTransferTicket(selectedTicket.id, transferTarget);
     notifyTransfer({
       fromDepartment: selectedTicket.department || 'Reception',
       toDepartment: transferTarget,
@@ -439,19 +444,11 @@ export function HospitalQueueManager({
 
             <div>
               <label className="block text-xs font-semibold text-neutral-700 mb-1">Patient Full Name *</label>
-              <Input
-                value={patientName}
-                onChange={(e) => setPatientName(e.target.value)}
-                placeholder="e.g. Chinedu Okafor"
-                list="tekilab-queue-patients"
-                className="h-10 rounded-xl"
-                required
-              />
-              <datalist id="tekilab-queue-patients">
-                {patients.map((p) => (
-                  <option key={p.id} value={p.fullName} />
-                ))}
-              </datalist>
+              <select aria-label="Registered patient" value={patientId} onChange={e => setPatientId(e.target.value)} className="w-full h-10 rounded-xl border px-2" required>
+                <option value="">Select a registered patient</option>
+                {patients.map(p => <option key={p.id} value={p.id}>{p.fullName} — {p.mrn}</option>)}
+              </select>
+              <p className="text-xs text-slate-500 mt-1">Register new patients in Patient Central first.</p>
             </div>
 
             <div>

@@ -424,7 +424,7 @@ export const SuperAdminSaaSView: React.FC<SuperAdminSaaSViewProps> = ({
   return (
     <div className="space-y-6 font-sans pb-16 w-full max-w-full overflow-x-hidden px-2 sm:px-4">
       {/* 1. Simple Hero Header Banner */}
-      <div className="relative overflow-hidden rounded-3xl bg-slate-900 text-white p-5 sm:p-7 shadow-xl border border-slate-800 w-full">
+      <div className="relative overflow-hidden rounded-xl bg-slate-900 text-white p-4 sm:p-5 shadow-sm border border-slate-800 w-full">
         <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-5">
           <div className="flex items-center gap-4 min-w-0">
             {/* Healthcare Image Thumbnail */}
@@ -437,7 +437,7 @@ export const SuperAdminSaaSView: React.FC<SuperAdminSaaSViewProps> = ({
             </div>
 
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-black tracking-tight text-white truncate">
+              <h1 className="text-xl font-semibold tracking-tight text-white truncate">
                 SaaS Businesses
               </h1>
               <p className="text-xs text-slate-300 font-medium truncate mt-0.5">
@@ -1020,7 +1020,7 @@ export const SuperAdminSaaSView: React.FC<SuperAdminSaaSViewProps> = ({
           {activeSubTab === 'pricing' && (
             <div className="space-y-6 w-full">
               <div className="text-center max-w-2xl mx-auto space-y-1">
-                <h2 className="text-xl sm:text-2xl font-black text-slate-900 dark:text-white tracking-tight">
+                <h2 className="text-lg sm:text-xl font-semibold text-slate-900 dark:text-white tracking-tight">
                   Plans & Pricing
                 </h2>
                 <p className="text-xs text-slate-500">

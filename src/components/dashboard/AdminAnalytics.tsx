@@ -187,10 +187,10 @@ export function AdminAnalytics({ selectedBranchId = 'pharma-1' }: { selectedBran
   };
 
   return (
-    <div className="space-y-6 md:space-y-10 animate-in fade-in duration-500">
+    <div className="space-y-4 md:space-y-6 animate-in fade-in duration-500">
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 uppercase italic">Sales Analytics</h1>
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-slate-900">Sales Analytics</h1>
           <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">Real-time revenue and inventory stats</p>
         </div>
         <div className="flex p-1.5 bg-white rounded-xl md:rounded-2xl border-2 border-slate-100 shadow-sm overflow-x-auto w-full md:w-auto">
@@ -232,14 +232,14 @@ export function AdminAnalytics({ selectedBranchId = 'pharma-1' }: { selectedBran
       </div>
 
       {/* Today's Sales Summary Callout */}
-      <Card className="rounded-[2.5rem] border-none bg-blue-600 p-8 md:p-12 text-white relative overflow-hidden group">
+      <Card className="rounded-xl border-none bg-blue-600 p-5 md:p-6 text-white relative overflow-hidden group">
          <div className="absolute top-0 right-0 p-8 opacity-10 group-hover:scale-125 transition-transform duration-700">
             <TrendingUp size={120} />
          </div>
          <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-8">
             <div>
                <p className="text-[10px] font-black uppercase tracking-[0.3em] text-blue-200 mb-2">Today's Performance Matrix</p>
-               <h2 className="text-3xl md:text-5xl font-black italic tracking-tighter leading-none mb-4">
+               <h2 className="text-2xl md:text-3xl font-semibold tracking-tight leading-tight mb-3">
                  TODAY: ₦{todayRevenue.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                </h2>
                <div className="flex flex-wrap gap-3">
@@ -372,8 +372,8 @@ export function AdminAnalytics({ selectedBranchId = 'pharma-1' }: { selectedBran
 
 function MetricCard({ title, value, trend, isPositive, icon }: any) {
   return (
-    <Card className="border-none shadow-xl shadow-slate-200/40 rounded-[2rem] md:rounded-[2.2rem] bg-white group hover:-translate-y-1 transition-all overflow-hidden border border-transparent hover:border-slate-100">
-      <CardContent className="p-6 md:p-8">
+    <Card className="border border-slate-200 shadow-sm rounded-xl bg-white overflow-hidden">
+      <CardContent className="p-4 md:p-5">
         <div className="flex items-center justify-between mb-4 md:mb-6">
            <div className={`p-3 md:p-4 rounded-xl md:rounded-[1.4rem] shadow-lg ${isPositive ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'}`}>
               {icon}
@@ -384,7 +384,7 @@ function MetricCard({ title, value, trend, isPositive, icon }: any) {
            </div>
         </div>
         <p className="text-slate-400 font-black text-[9px] md:text-[10px] uppercase tracking-[0.2em] mb-1 md:mb-1.5 px-0.5">{title}</p>
-        <h3 className="text-3xl md:text-4xl font-black text-slate-900 tracking-tighter leading-none">{value}</h3>
+        <h3 className="text-xl md:text-2xl font-semibold text-slate-900 tracking-tight leading-tight break-words">{value}</h3>
       </CardContent>
     </Card>
   );

@@ -992,27 +992,27 @@ export function ReportsAnalyticsView({ selectedBranchId = 'pharma-1' }: { select
   };
 
   return (
-    <div className="space-y-10 animate-in fade-in duration-500">
+    <div className="space-y-5 animate-in fade-in duration-500">
       
       {/* Top Header Row of Reporting matrix */}
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
         <div>
-          <h1 className="text-2xl md:text-3xl font-black tracking-tight text-slate-900 uppercase italic">Reporting Matrix</h1>
+          <h1 className="text-xl md:text-2xl font-semibold tracking-tight text-slate-900">Reporting Matrix</h1>
           <p className="text-slate-500 font-bold text-[10px] uppercase tracking-widest mt-1">Real-time store operations & audit systems</p>
         </div>
         
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           <div className="flex items-center gap-2 bg-slate-50 p-1 rounded-2xl border-2 border-slate-100">
             <Button 
               variant="ghost" 
               onClick={exportDataToCSV}
-              className="h-12 px-6 rounded-xl font-black text-[10px] uppercase tracking-widest text-slate-500 hover:text-blue-600 hover:bg-white transition-all shadow-sm border border-transparent hover:border-slate-100"
+              className="h-10 px-3 rounded-lg font-black text-[10px] uppercase tracking-widest text-slate-500 hover:text-blue-600 hover:bg-white transition-all shadow-sm border border-transparent hover:border-slate-100"
             >
                <Download className="w-4 h-4 mr-2" /> Export CSV
             </Button>
             <Button 
               onClick={exportDataToPDF}
-              className="h-12 px-6 rounded-xl bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-900/20 hover:scale-[1.02] transition-transform"
+              className="h-10 px-3 rounded-lg bg-slate-900 text-white font-black text-[10px] uppercase tracking-widest shadow-lg shadow-slate-900/20 hover:scale-[1.02] transition-transform"
             >
                <FileText className="w-4 h-4 mr-2" /> Branded PDF
             </Button>
@@ -1021,7 +1021,7 @@ export function ReportsAnalyticsView({ selectedBranchId = 'pharma-1' }: { select
       </div>
 
       {/* Date Frame selectors and Range details */}
-      <Card className="rounded-[2.5rem] border-none shadow-2xl shadow-slate-200/40 bg-white p-2">
+      <Card className="rounded-xl border border-slate-200 shadow-sm bg-white p-2">
          <div className="flex flex-col lg:flex-row items-center gap-6 p-6">
             <div className="flex flex-wrap items-center gap-2 bg-slate-50 p-1.5 rounded-[1.5rem] w-full lg:w-auto">
                {(['today', 'yesterday', 'week', 'month', 'year'] as TimeRange[]).map((range) => (
@@ -1898,7 +1898,7 @@ export function ReportsAnalyticsView({ selectedBranchId = 'pharma-1' }: { select
 
 function SummaryCard({ title, value, trend, trendUp, icon }: any) {
   return (
-    <Card className="border-none shadow-xl rounded-[2.5rem] bg-white p-8 group hover:-translate-y-1 transition-all">
+    <Card className="border border-slate-200 shadow-sm rounded-xl bg-white p-4 md:p-5">
        <div className="flex justify-between items-start mb-6">
           <div className="p-4 bg-slate-50 rounded-2xl group-hover:bg-blue-50 transition-colors shadow-sm">{icon}</div>
           <div className={`flex items-center gap-1 font-black text-[10px] uppercase tracking-widest ${trendUp ? 'text-emerald-500' : 'text-rose-500'}`}>
@@ -1907,7 +1907,7 @@ function SummaryCard({ title, value, trend, trendUp, icon }: any) {
           </div>
        </div>
        <p className="text-slate-400 font-black text-[9px] uppercase tracking-widest mb-1">{title}</p>
-       <h3 className="text-3xl font-black text-slate-900 tracking-tighter">{value}</h3>
+       <h3 className="text-xl md:text-2xl font-semibold text-slate-900 tracking-tight break-words">{value}</h3>
     </Card>
   );
 }

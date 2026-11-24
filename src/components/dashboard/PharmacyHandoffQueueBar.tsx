@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { FlaskConical, Pill, CheckCircle2, ArrowDownToLine, AlertTriangle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { PharmacyHandoffPayload } from '../../types/tekilab';
@@ -11,7 +11,7 @@ import { useTenantModules } from '../../context/TenantModuleContext';
 import { toast } from 'sonner';
 
 interface PharmacyHandoffQueueBarProps {
-  onLoadSuggestionToCart: (item: PharmacyHandoffPayload) => void;
+  onLoadSuggestionToCart: (item: PharmacyHandoffPayload, dryRun?: boolean) => boolean;
 }
 
 export function PharmacyHandoffQueueBar({
@@ -24,36 +24,44 @@ export function PharmacyHandoffQueueBar({
 
   useEffect(() => {
     if (!isModuleEnabled('pharmacy')) return;
-    fetchPharmacyHandoffQueue(config.tenantId).then(setQueue);
+    let active = true;
+    fetchPharmacyHandoffQueue(config.tenantId).then(items => { if (active) setQueue(items); });
 
     const onUpdate = () => setQueue(getLocalPharmacyHandoffQueue(config.tenantId));
     window.addEventListener('tekilab_pharmacy_queue_updated', onUpdate);
-    return () => window.removeEventListener('tekilab_pharmacy_queue_updated', onUpdate);
+    return () => { active = false; window.removeEventListener('tekilab_pharmacy_queue_updated', onUpdate); };
   }, [config.tenantId, isModuleEnabled]);
 
-  const pendingItems = queue.filter((q) => q.status !== 'DISPENSED');
+  const loading = useRef(false);
+  const pendingItems = queue.filter((q) => q.tenantId === config.tenantId && q.status !== 'DISPENSED');
   if (!isModuleEnabled('pharmacy') || pendingItems.length === 0) return null;
 
   const handleLoad = async (item: PharmacyHandoffPayload) => {
-    onLoadSuggestionToCart(item);
-    const updated = await updatePharmacyHandoffStatus(item.handoffId, 'LOADED_IN_POS');
-    setQueue(updated);
+    if (loading.current) return;
+    loading.current = true;
+    try {
+      if (!onLoadSuggestionToCart(item, true)) return;
+      const updated = await updatePharmacyHandoffStatus(item.handoffId, 'LOADED_IN_POS', config.tenantId);
+      if (!onLoadSuggestionToCart(item)) toast.warning('Prescription reserved; review the cart before dispensing.');
+      setQueue(updated);
+    } catch (error: any) { toast.error(error.message); }
+    finally { loading.current = false; }
   };
 
   const handleDispensed = async (handoffId: string) => {
-    const updated = await updatePharmacyHandoffStatus(handoffId, 'DISPENSED');
+    const updated = await updatePharmacyHandoffStatus(handoffId, 'DISPENSED', config.tenantId);
     setQueue(updated);
     toast.success(`Lab prescription ${handoffId} marked dispensed.`);
   };
 
   return (
-    <div className="mb-3 bg-neutral-950 text-white rounded-xl border border-neutral-800 p-4 space-y-3">
+    <div className="mb-3 bg-white text-slate-900 rounded-xl border border-slate-200 p-3 space-y-3">
       <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-xs font-semibold text-green-400">
+        <div className="flex items-center gap-2 text-sm font-semibold text-emerald-700">
           <FlaskConical className="w-4 h-4" />
-          <span>Incoming TekiLab Prescription Handoffs ({pendingItems.length})</span>
+          <span>Clinician-approved prescriptions ({pendingItems.length})</span>
         </div>
-        <span className="text-[11px] font-mono text-neutral-400">
+        <span className="text-[11px] font-mono text-slate-500">
           Cross-Module LIMS -&gt; Pharmacy Queue
         </span>
       </div>
@@ -62,24 +70,24 @@ export function PharmacyHandoffQueueBar({
         {pendingItems.slice(0, 4).map((item) => (
           <div
             key={item.handoffId}
-            className="bg-neutral-900 border border-neutral-800 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+            className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
           >
             <div className="space-y-1 min-w-0">
               <div className="flex items-center gap-2 text-xs">
-                <span className="font-semibold text-white truncate">{item.patientName}</span>
-                <span className="font-mono text-[11px] text-neutral-400">{item.accessionNumber}</span>
+                <span className="font-semibold text-slate-900 truncate">{item.patientName}</span>
+                <span className="font-mono text-[11px] text-slate-500">{item.accessionNumber}</span>
                 {item.anomalySeverity === 'critical' && (
                   <AlertTriangle className="w-3.5 h-3.5 text-red-400 shrink-0" />
                 )}
               </div>
-              <p className="text-xs text-green-400 font-medium flex items-center gap-1.5">
+              <p className="text-xs text-emerald-700 font-medium flex items-center gap-1.5">
                 <Pill className="w-3.5 h-3.5 shrink-0" />
                 <span className="truncate">
                   {item.aiSuggestedDrug.drugName} ({item.aiSuggestedDrug.dosage} ·{' '}
                   {item.aiSuggestedDrug.frequency})
                 </span>
               </p>
-              <p className="text-[11px] text-neutral-400 truncate">
+              <p className="text-[11px] text-slate-500 truncate">
                 Dx: {item.likelyDiagnosis}
               </p>
             </div>
@@ -89,6 +97,7 @@ export function PharmacyHandoffQueueBar({
                 type="button"
                 size="sm"
                 onClick={() => handleLoad(item)}
+                disabled={item.status !== 'QUEUED'}
                 className="h-8 px-3 bg-green-600 hover:bg-green-500 text-white text-xs gap-1.5 cursor-pointer"
               >
                 <ArrowDownToLine className="w-3.5 h-3.5" /> Load POS
@@ -97,9 +106,9 @@ export function PharmacyHandoffQueueBar({
                 type="button"
                 size="sm"
                 variant="outline"
-                onClick={() => handleDispensed(item.handoffId)}
-                className="h-8 px-2.5 bg-transparent border-neutral-700 text-neutral-300 hover:bg-neutral-800 text-xs cursor-pointer"
-                title="Mark as Dispensed"
+                disabled
+                className="h-8 px-2.5 bg-white border-slate-300 text-slate-700 hover:bg-slate-100 text-xs cursor-pointer"
+                title="Dispensing is recorded after successful POS checkout"
               >
                 <CheckCircle2 className="w-3.5 h-3.5" />
               </Button>
