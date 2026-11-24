@@ -229,11 +229,11 @@ const RAPID_TEST_PANELS: RapidPanelPreset[] = [
 ];
 
 const STEPS: { num: WorkflowStep; label: string; sub: string }[] = [
-  { num: 1, label: 'Registration', sub: '30–60s' },
+  { num: 1, label: 'Patient', sub: '30–60s' },
   { num: 2, label: 'Sample', sub: '30s' },
-  { num: 3, label: 'AI Analysis', sub: '2–5m' },
-  { num: 4, label: 'Approval', sub: '15–30s' },
-  { num: 5, label: 'Delivery', sub: '30s' }
+  { num: 3, label: 'Run Test', sub: '2–5m' },
+  { num: 4, label: 'Review', sub: '15–30s' },
+  { num: 5, label: 'Send Result', sub: '30s' }
 ];
 
 function generateSampleUid(): string {
@@ -358,7 +358,7 @@ export function RapidResultConsole({
 
   // Step 3: Analyzer Workstation & AI
   const [parameters, setParameters] = useState<RapidLabParameter[]>(
-    RAPID_TEST_PANELS[0].parameters.map((p) => ({ ...p }))
+    RAPID_TEST_PANELS[0].parameters.map((p) => ({ ...p, value: '' }))
   );
   const [intakeSource, setIntakeSource] = useState<'manual_entry' | 'barcode_scan' | 'instrument_webhook'>('manual_entry');
   const [instrumentId, setInstrumentId] = useState<string>('');
@@ -368,7 +368,7 @@ export function RapidResultConsole({
 
   // Step 4: Approval
   const [approvedBy, setApprovedBy] = useState<string>(
-    currentUser?.name || currentUser?.displayName || 'Dr. Kingsley Agu (Lead Scientist)'
+    currentUser?.name || currentUser?.displayName || ''
   );
   const [approvalNotes, setApprovalNotes] = useState<string>('');
   const [isApproved, setIsApproved] = useState<boolean>(false);
@@ -458,7 +458,7 @@ export function RapidResultConsole({
     setSelectedPanelId(panel.id);
     setSampleType(panel.sampleType);
     setTubeColor(panel.tubeColor);
-    setParameters(panel.parameters.map((p) => ({ ...p })));
+    setParameters(panel.parameters.map((p) => ({ ...p, value: '' })));
     setAiReport(null);
     setIsApproved(false);
     setApprovalMode(null);
@@ -490,7 +490,7 @@ export function RapidResultConsole({
         id: pid,
         mrn: `MRN-${Math.floor(10000 + Math.random() * 89999)}`,
         fullName: patientName.trim(),
-        phone: patientPhone.trim() || '08030000000',
+        phone: patientPhone.trim(),
         gender: patientGender,
         dob: `${new Date().getFullYear() - (Number(patientAge) || 30)}-01-01`,
         allergies: patientAllergies
@@ -510,8 +510,12 @@ export function RapidResultConsole({
 
   // Pull automated analyzer packet into Step 3
   const handleLoadInstrumentPacket = (pkt: InstrumentWebhookPacket) => {
-    if (pkt.patientName && !patientName) setPatientName(pkt.patientName);
-    setSampleUid(pkt.accessionNumber || sampleUid);
+    if (!pkt.accessionNumber || pkt.accessionNumber !== sampleUid) {
+      toast.error('Instrument readings do not match this sample.');
+      return;
+    }
+    setIsApproved(false);
+    setApprovalMode(null);
     setParameters(pkt.parameters.map((p) => ({ ...p })));
     setIntakeSource('instrument_webhook');
     setInstrumentId(pkt.instrumentId);
@@ -521,14 +525,17 @@ export function RapidResultConsole({
 
   // Update individual parameter
   const handleParamChange = (idx: number, field: keyof RapidLabParameter, val: string) => {
+    setIsApproved(false);
+    setApprovalMode(null);
+    setAiReport(null);
     setParameters((prev) =>
       prev.map((row, i) => {
         if (i !== idx) return row;
         const next = { ...row, [field]: val };
         if (field === 'value') {
           const lower = val.toLowerCase();
-          if (lower.includes('pos') || lower.includes('react')) next.flag = 'Positive';
-          else if (lower.includes('neg') || lower.includes('non-react')) next.flag = 'Negative';
+          if (lower.includes('neg') || /non[- ]?react/.test(lower)) next.flag = 'Negative';
+          else if (lower.includes('pos') || lower.includes('react')) next.flag = 'Positive';
         }
         return next;
       })
@@ -537,6 +544,12 @@ export function RapidResultConsole({
 
   // Step 3: Run TekiLab AI Analysis
   const handleRunAIAnalysis = async () => {
+    if (!custodyVerified || !parameters.length || parameters.some(p => !p.value.trim()) || selectedPanel.parameters.some(required => !parameters.some(p => p.name === required.name && p.value.trim()))) {
+      toast.error('Confirm the sample and enter every required measured result first.');
+      return;
+    }
+    setIsApproved(false);
+    setApprovalMode(null);
     setIsAnalyzing(true);
     try {
       const res = await fetch('/api/lims/rapid-result/analyze', {
@@ -567,22 +580,9 @@ export function RapidResultConsole({
       setAiReport(analysis);
       setApprovalNotes(analysis.clinicalSummary);
 
-      // Autonomous Auto-Verification if strictly normal
-      if (!analysis.anomalyDetected && analysis.severity === 'normal') {
-        setIsApproved(true);
-        setApprovalMode('AUTO_VERIFIED');
-        toast.success('AI Auto-Verification Passed (Normal Reference Range)', {
-          description: 'Cleared automatically — ready for immediate delivery.'
-        });
-      } else {
-        setIsApproved(false);
-        setApprovalMode(null);
-        toast.warning(
-          analysis.severity === 'critical'
-            ? 'CRITICAL / PANIC VALUE DETECTED — Pathologist Sign-Off Required'
-            : 'Abnormal Result Flagged — Review & Sign Off in Step 4'
-        );
-      }
+      setIsApproved(false);
+      setApprovalMode(null);
+      toast.info(analysis.severity === 'critical' ? 'Critical result: urgent professional review required.' : 'AI check complete. A professional must review and approve the result.');
       setStep(4);
     } catch (err: any) {
       toast.error(err?.message || 'Unable to run AI verification.');
@@ -593,7 +593,11 @@ export function RapidResultConsole({
 
   // Step 4: Pathologist Sign-off
   const handleSignOff = () => {
-    if (!approvedBy.trim()) {
+    if (!aiReport || !custodyVerified || !parameters.length || parameters.some(p => !p.value.trim())) {
+      toast.error('Complete the sample and result review first.');
+      return;
+    }
+    if (!approvedBy.trim() || approvedBy !== (currentUser?.name || currentUser?.displayName)) {
       toast.error('Enter validating scientist / pathologist name.');
       return;
     }
@@ -605,6 +609,10 @@ export function RapidResultConsole({
 
   // Step 5: Instant PDF + WhatsApp Dispatch
   const handleInstantDispatch = async () => {
+    if (!isApproved || approvalMode !== 'PATHOLOGIST_SIGNED' || !custodyVerified || parameters.some(p => !p.value.trim())) {
+      toast.error('An approved, complete result is required.');
+      return;
+    }
     setIsDispatching(true);
     try {
       const res = await fetch('/api/lims/rapid-result/dispatch', {
@@ -617,7 +625,7 @@ export function RapidResultConsole({
           patientId: selectedPatientId || `walkin-${Date.now()}`,
           patientName: patientName || 'Walk-in Patient',
           patientMrn: selectedPatientId || 'WALK-IN',
-          patientPhone: patientPhone || '08031234567',
+          patientPhone: patientPhone,
           testName: selectedPanel.name,
           category: selectedPanel.category,
           sampleType,
@@ -697,6 +705,7 @@ export function RapidResultConsole({
 
   // Download branded PDF
   const handleDownloadPDF = () => {
+    if (!isApproved || approvalMode !== 'PATHOLOGIST_SIGNED') { toast.error('Approve the result first.'); return; }
     const mappedResults: Record<string, { value: string; flag: string }> = {};
     parameters.forEach((p) => {
       mappedResults[p.name] = { value: `${p.value} ${p.unit || ''}`.trim(), flag: p.flag };
@@ -729,6 +738,8 @@ export function RapidResultConsole({
 
   // Direct Diagnostic-to-Pharmacy Handoff (works even when Pharmacy UI is muted!)
   const handlePharmacyHandoff = async () => {
+    toast.info('Medication requests must be reviewed and prescribed by an authorized clinician.');
+    return;
     if (!aiReport?.aiSuggestedDrug) {
       toast.info('No medication suggestion attached to this normal result.');
       return;
@@ -775,7 +786,7 @@ export function RapidResultConsole({
     setPatientPhone('');
     setPatientAllergies('');
     setSampleUid(generateSampleUid());
-    setParameters(selectedPanel.parameters.map((p) => ({ ...p })));
+    setParameters(selectedPanel.parameters.map((p) => ({ ...p, value: '' })));
     setAiReport(null);
     setIsApproved(false);
     setApprovalMode(null);
@@ -791,7 +802,7 @@ export function RapidResultConsole({
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-10 font-sans text-neutral-950">
       {/* Minimalist White / Blue / Black Header */}
-      <div className="bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5 shadow-xs">
+      <div className="bg-white border border-neutral-200 rounded-xl p-3 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5 shadow-xs">
         <div className="space-y-1.5">
           <div className="inline-flex items-center gap-2 text-xs font-semibold text-blue-600">
             <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
@@ -800,10 +811,10 @@ export function RapidResultConsole({
             <span className="text-neutral-500 font-mono">{sampleUid}</span>
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-neutral-950">
-            5–10 Minute Rapid Diagnostic Workflow
+            New Test
           </h1>
           <p className="text-sm text-neutral-500">
-            Express registration, QR specimen custody, AI auto-verification, and instant patient &amp; pharmacy delivery.
+            Register a patient, collect a sample, enter results and send the approved report.
           </p>
         </div>
 
@@ -833,7 +844,7 @@ export function RapidResultConsole({
 
       {/* Clean 5-Step Progress Stepper */}
       <div className="bg-white border border-neutral-200 rounded-2xl p-4 shadow-xs">
-        <div className="grid grid-cols-5 gap-2">
+        <div className="grid grid-cols-5 gap-1 sm:gap-2">
           {STEPS.map((s) => {
             const isActive = step === s.num;
             const isCompleted = step > s.num;
@@ -842,11 +853,13 @@ export function RapidResultConsole({
                 key={s.num}
                 type="button"
                 onClick={() => {
-                  if (s.num <= step || (s.num === 2 && patientName.trim()) || (s.num === 3 && patientName.trim())) {
+                  if (s.num < step && !dispatchResult) {
+                    setIsApproved(false);
+                    setApprovalMode(null);
                     setStep(s.num);
                   }
                 }}
-                className={`flex items-center gap-3 p-3 rounded-xl text-left transition-all border cursor-pointer ${
+                className={`flex flex-col sm:flex-row items-center gap-1 sm:gap-3 p-1 sm:p-3 rounded-xl text-left transition-all border cursor-pointer ${
                   isActive
                     ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                     : isCompleted
@@ -865,8 +878,8 @@ export function RapidResultConsole({
                 >
                   {isCompleted ? <Check className="w-4 h-4" /> : s.num}
                 </div>
-                <div className="min-w-0 hidden sm:block">
-                  <div className="text-xs font-bold truncate">{s.label}</div>
+                <div className="min-w-0 w-full text-center sm:text-left">
+                  <div className="text-[10px] sm:text-xs font-semibold break-words">{s.label}</div>
                   <div className={`text-[11px] truncate ${isActive ? 'text-blue-100' : 'text-neutral-400'}`}>
                     {s.sub}
                   </div>
@@ -890,7 +903,7 @@ export function RapidResultConsole({
                   <UserPlus className="w-4 h-4" />
                 </div>
                 <div>
-                  <h2 className="text-base font-bold text-neutral-950">1. Express Patient Intake</h2>
+                  <h2 className="text-base font-bold text-neutral-950">1. Patient Details</h2>
                   <p className="text-xs text-neutral-500">Lookup existing patient or register in seconds</p>
                 </div>
               </div>
@@ -1104,7 +1117,7 @@ export function RapidResultConsole({
                         key={panel.id}
                         type="button"
                         onClick={() => handleSelectPanel(panel)}
-                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex items-center justify-between gap-2 ${
+                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-wrap items-center justify-between gap-2 ${
                           active
                             ? 'bg-blue-50/70 border-blue-600 text-blue-700 font-bold'
                             : 'bg-white border-neutral-200 text-neutral-900 hover:border-neutral-400 font-medium'
@@ -1206,7 +1219,7 @@ export function RapidResultConsole({
           <div className="lg:col-span-7 bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xs">
             <div className="space-y-4">
               <div>
-                <h2 className="text-base font-bold text-neutral-950">Chain of Custody &amp; Collection Verification</h2>
+                <h2 className="text-base font-bold text-neutral-950">Confirm Sample Collection</h2>
                 <p className="text-xs text-neutral-500">Timestamped audit trail from specimen collection to rapid analyzer bench</p>
               </div>
 
@@ -1268,12 +1281,12 @@ export function RapidResultConsole({
               </Button>
               <Button
                 onClick={() => {
-                  setCustodyVerified(true);
+                  if (!custodyVerified) { toast.error('Confirm sample collection first.'); return; }
                   setStep(3);
                 }}
                 className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
               >
-                Proceed to Analyzer Workstation
+                Enter Results
                 <ArrowRight className="w-4 h-4 ml-2" />
               </Button>
             </div>
@@ -1320,7 +1333,7 @@ export function RapidResultConsole({
           <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-5 shadow-xs">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-base font-bold text-neutral-950">3. Rapid Analyzer Workstation — {selectedPanel.name}</h2>
+                <h2 className="text-base font-bold text-neutral-950">3. Enter Results — {selectedPanel.name}</h2>
                 <p className="text-xs text-neutral-500">
                   Enter numeric measurements or tap quick qualitative buttons; run TekiLab AI for instant validation &amp; prescription suggestion.
                 </p>
@@ -1460,7 +1473,7 @@ export function RapidResultConsole({
                 className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
               >
                 <Sparkles className="w-4 h-4 mr-2" />
-                {isAnalyzing ? 'Running TekiLab AI Engine...' : 'Run AI Verification & Outlier Check'}
+                {isAnalyzing ? 'Running TekiLab AI Engine...' : 'Check Results'}
               </Button>
             </div>
           </div>
@@ -1477,7 +1490,7 @@ export function RapidResultConsole({
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
                 <div className="text-xs font-bold uppercase tracking-wider text-blue-600">
-                  4. TekiLab AI Diagnostic Verification
+                  4. Review Results
                 </div>
                 <h2 className="text-lg font-bold text-neutral-950">
                   {aiReport?.likelyDiagnosis || 'Diagnostic Summary'}
@@ -1496,14 +1509,14 @@ export function RapidResultConsole({
                   ? 'Critical Alert'
                   : aiReport?.severity === 'attention'
                     ? 'Abnormal Flag'
-                    : 'Auto-Verified Normal'}
+                    : 'No AI flags — review required'}
               </span>
             </div>
 
             <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200 space-y-1.5">
               <div className="text-xs font-bold text-neutral-700">Patient-Friendly Clinical Summary</div>
               <p className="text-sm text-neutral-800 leading-relaxed">
-                {aiReport?.clinicalSummary || 'All parameters evaluated against ISO reference ranges.'}
+                {aiReport?.clinicalSummary || 'No AI summary available.'}
               </p>
             </div>
 
@@ -1573,7 +1586,7 @@ export function RapidResultConsole({
                   <p className="text-xs text-neutral-500">
                     {approvalMode === 'AUTO_VERIFIED'
                       ? 'All values within normal range — automatically cleared.'
-                      : 'Abnormal or critical markers require explicit sign-off.'}
+                      : 'All results require professional approval.'}
                   </p>
                 </div>
               </div>
@@ -1582,7 +1595,7 @@ export function RapidResultConsole({
                 <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Validating Scientist / Pathologist</label>
                 <Input
                   value={approvedBy}
-                  onChange={(e) => setApprovedBy(e.target.value)}
+                  readOnly
                   className="h-10 rounded-xl border-neutral-200"
                 />
               </div>
@@ -1742,11 +1755,11 @@ export function RapidResultConsole({
               ) : (
                 <Button
                   onClick={handlePharmacyHandoff}
-                  disabled={isHandingOffRx || !aiReport?.aiSuggestedDrug}
+                  disabled
                   className="w-full h-10 rounded-xl bg-neutral-950 hover:bg-neutral-800 text-white font-semibold disabled:opacity-40"
                 >
                   <Pill className="w-4 h-4 mr-2 text-blue-400" />
-                  {isHandingOffRx ? 'Sending Script...' : 'Generate Associated Prescription'}
+                  {isHandingOffRx ? 'Sending Script...' : 'Requires Doctor Review'}
                 </Button>
               )}
             </div>
@@ -1758,7 +1771,7 @@ export function RapidResultConsole({
       {recentDispatches.length > 0 && (
         <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 shadow-xs">
           <div className="flex items-center justify-between">
-            <h3 className="text-sm font-bold text-neutral-950">Recent Rapid Diagnostic Dispatches</h3>
+            <h3 className="text-sm font-bold text-neutral-950">Recent Results</h3>
             <span className="text-xs text-neutral-500">{recentDispatches.length} completed</span>
           </div>
           <div className="overflow-x-auto">
@@ -1798,7 +1811,7 @@ export function RapidResultConsole({
         open={isScannerOpen}
         onOpenChange={setIsScannerOpen}
         onDecoded={(code) => {
-          setSampleUid(code);
+          if (code !== sampleUid) { toast.error('Barcode does not match the current sample.'); return; }
           setCustodyVerified(true);
           setIntakeSource('barcode_scan');
           toast.success(`Scanned Specimen Barcode: ${code}`);
