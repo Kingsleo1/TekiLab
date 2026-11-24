@@ -64,7 +64,7 @@ export function formatWhatsAppPhone(phone: string = ''): string {
   if (!cleaned.startsWith('234') && cleaned.length === 10) {
     cleaned = '234' + cleaned;
   }
-  if (!cleaned) cleaned = '2348031234567';
+  if (!cleaned) return '';
   return cleaned;
 }
 
@@ -79,11 +79,11 @@ export function LaboratoryLIMSView({
 }: LaboratoryLIMSViewProps) {
   const [activeFilter, setActiveFilter] = useState<'ALL' | 'PROCESSING' | 'RESULT_ENTERED' | 'VALIDATED' | 'RELEASED'>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
-  const [selectedOrder, setSelectedPatientOrder] = useState<LabOrder | null>(labOrders[0] || null);
+  const [selectedOrder, setSelectedPatientOrder] = useState<LabOrder | null>(null);
 
   // Result Entry Form State
   const [resultValues, setResultValues] = useState<Record<string, { value: string; flag: 'Normal' | 'High' | 'Low' | 'Critical' | 'Positive' | 'Negative' }>>({});
-  const [likelyIssue, setLikelyIssue] = useState<string>(COMMON_LAB_FINDINGS[0]);
+  const [likelyIssue, setLikelyIssue] = useState<string>('');
   const [isCustomIssueMode, setIsCustomIssueMode] = useState(false);
   const [customIssueText, setCustomIssueText] = useState('');
   const [clinicalInterpretation, setClinicalInterpretation] = useState('');
@@ -110,7 +110,9 @@ export function LaboratoryLIMSView({
     } else {
       setResultValues({});
     }
-    setLikelyIssue(order.likelyIssue || COMMON_LAB_FINDINGS[0]);
+    setLikelyIssue(order.likelyIssue || '');
+    setIsCustomIssueMode(false);
+    setCustomIssueText('');
     setClinicalInterpretation(order.clinicalInterpretation || '');
   };
 
@@ -119,7 +121,7 @@ export function LaboratoryLIMSView({
       ...order,
       sampleStatus: 'Sample Collected',
       orderStatus: 'PROCESSING',
-      sampleCollectorName: currentUser?.displayName || currentUser?.name || 'Lab Scientist Musa',
+      sampleCollectorName: currentUser?.displayName || currentUser?.name || '',
       sampleCollectedAt: new Date().toISOString()
     };
     onUpdateLabOrder(updated);
@@ -129,6 +131,10 @@ export function LaboratoryLIMSView({
 
   const handleSaveResult = () => {
     if (!selectedOrder) return;
+    if (selectedOrder.orderStatus === 'RELEASED' || selectedOrder.sampleStatus !== 'Sample Collected') {
+      toast.error('Collect the sample first. Released reports cannot be overwritten.');
+      return;
+    }
 
     const updatedResults: any = {};
     Object.entries(resultValues).forEach(([paramName, data]: [string, any]) => {
@@ -144,9 +150,9 @@ export function LaboratoryLIMSView({
       ...selectedOrder,
       orderStatus: 'RESULT_ENTERED',
       results: updatedResults,
-      likelyIssue: finalIssue || 'Normal Physiological Reference Values',
+      likelyIssue: finalIssue,
       clinicalInterpretation,
-      enteredByName: currentUser?.displayName || currentUser?.name || 'Lab Scientist',
+      enteredByName: currentUser?.displayName || currentUser?.name || '',
       enteredAt: new Date().toISOString()
     };
 
@@ -158,6 +164,19 @@ export function LaboratoryLIMSView({
   const handleValidateAndRelease = () => {
     if (!selectedOrder) return;
 
+    if (selectedOrder.orderStatus === 'RELEASED' || selectedOrder.sampleStatus !== 'Sample Collected') {
+      toast.error('Collect the sample before approving a result. Released reports cannot be overwritten.');
+      return;
+    }
+    const template = labCatalog.find(c => c.id === selectedOrder.testId);
+    if (!template?.parameters?.length || template.parameters.some(p => !resultValues[p.name]?.value?.trim())) {
+      toast.error('Enter all measured results using the correct test template before approval.');
+      return;
+    }
+    if (!(currentUser?.displayName || currentUser?.name)) {
+      toast.error('Sign in before approving a result.');
+      return;
+    }
     const reportNum = selectedOrder.reportNumber || `TM-LAB-2026-${Math.floor(10000 + Math.random() * 90000)}`;
     const finalIssue = isCustomIssueMode ? customIssueText.trim() : likelyIssue;
 
@@ -173,10 +192,10 @@ export function LaboratoryLIMSView({
       ...selectedOrder,
       orderStatus: 'RELEASED',
       results: Object.keys(updatedResults).length > 0 ? updatedResults : selectedOrder.results,
-      likelyIssue: finalIssue || selectedOrder.likelyIssue || 'Normal Physiological Reference Values',
-      clinicalInterpretation: clinicalInterpretation || 'Results verified against internal controls. No panic values detected.',
+      likelyIssue: finalIssue,
+      clinicalInterpretation,
       enteredByName: selectedOrder.enteredByName || currentUser?.displayName || currentUser?.name || 'Lab Scientist',
-      validatedByName: currentUser?.displayName || currentUser?.name || 'Chief Pathologist Dr. Samuel Vance',
+      validatedByName: currentUser?.displayName || currentUser?.name || '',
       validatedAt: new Date().toISOString(),
       releasedAt: new Date().toISOString(),
       reportNumber: reportNum,
@@ -188,85 +207,24 @@ export function LaboratoryLIMSView({
     toast.success(`Lab result validated & released! Report #: ${reportNum}`);
   };
 
-  // 1-Click Rapid Population & 5-Minute Result Release
-  const handleRapid5MinRelease = () => {
-    if (!selectedOrder) return;
-
-    const catalogItem = labCatalog.find(c => c.id === selectedOrder.testId) || labCatalog[0];
-    const params = catalogItem?.parameters || [
-      { id: 'p1', name: 'Primary Parameter', referenceRange: 'Normal', unit: '' }
-    ];
-
-    const autoResults: any = {};
-    params.forEach(p => {
-      const existing = resultValues[p.name];
-      autoResults[p.name] = {
-        value: existing?.value || (p.fieldType === 'select' ? p.options?.[0] || 'Normal' : 'Normal / Reference'),
-        flag: existing?.flag || 'Normal'
-      };
-    });
-
-    const reportNum = selectedOrder.reportNumber || `TM-LAB-2026-${Math.floor(10000 + Math.random() * 90000)}`;
-    const finalIssue = isCustomIssueMode ? customIssueText.trim() : likelyIssue;
-
-    const updated: LabOrder = {
-      ...selectedOrder,
-      orderStatus: 'RELEASED',
-      results: autoResults,
-      likelyIssue: finalIssue || 'Normal Physiological Reference Values',
-      clinicalInterpretation: clinicalInterpretation || 'Rapid 5-minute laboratory screening completed. Results verified against internal controls.',
-      enteredByName: currentUser?.displayName || currentUser?.name || 'Lab Scientist Musa',
-      validatedByName: currentUser?.displayName || currentUser?.name || 'Chief Pathologist Dr. Samuel Vance',
-      validatedAt: new Date().toISOString(),
-      releasedAt: new Date().toISOString(),
-      reportNumber: reportNum,
-      qrCodeUrl: `${getProductionDeployedUrl()}/verify?report=${reportNum}`
-    };
-
-    onUpdateLabOrder(updated);
-    setSelectedPatientOrder(updated);
-    toast.success(`5-Min Rapid Turnaround: Result populated & officially released! Report #: ${reportNum}`);
-  };
-
-  // 1-Click WhatsApp Direct Share with PDF Download
+  // WhatsApp Direct Share with PDF Download
   const handleSendWhatsAppResult = (order: LabOrder) => {
     const pat = patients.find(p => p.id === order.patientId || p.mrn === order.mrn || p.fullName.toLowerCase() === order.patientName.toLowerCase());
-    const rawPhone = pat?.phone || pat?.whatsapp || order.patientPhone || '+234 803 123 4567';
+    const rawPhone = pat?.whatsapp || pat?.phone || order.patientPhone || '';
     const cleanWhatsApp = formatWhatsAppPhone(rawPhone);
+    if (order.orderStatus !== 'RELEASED' || !/^234[0-9]{10}$/.test(cleanWhatsApp)) {
+      toast.error('Release the report and confirm the patient’s WhatsApp number first.');
+      return;
+    }
 
     // 1. Trigger PDF download with logo
     generateLabReportPDF(order, pat, companyLogo);
 
     // 2. Format professional WhatsApp message
-    const msg = `🏥 *TEKIMED DIAGNOSTIC LABORATORY REPORT*
-------------------------------------
-*Patient Name:* ${order.patientName} (MRN: ${order.mrn})
-*Test Name:* ${order.testName} (${order.category})
-*Accession No:* ${order.accessionNumber}
-*Report No:* ${order.reportNumber || 'TM-LAB-REPORT'}
-*Status:* VERIFIED & RELEASED (Rapid 5-Min Result)
-
-🔬 *Likely Issue / Diagnostic Finding:*
-${order.likelyIssue || 'Normal Physiological Reference Values'}
-
-📝 *Pathologist Remarks:*
-${order.clinicalInterpretation || 'Results verified against internal controls. No panic values detected.'}
-
-📄 *Your official PDF Laboratory Result Report with ISO certification badge has been generated and downloaded.*
-Verification Portal: ${order.qrCodeUrl || `${getProductionDeployedUrl()}/verify`}
-
-Thank you for choosing TekiMed Healthcare Services!`;
+    const msg = 'Your laboratory report is ready. Please contact your diagnostic centre to receive it securely.';
 
     const waUrl = `https://wa.me/${cleanWhatsApp}?text=${encodeURIComponent(msg)}`;
     window.open(waUrl, '_blank');
-
-    // Update order state
-    const updated: LabOrder = {
-      ...order,
-      whatsappSentAt: new Date().toISOString()
-    };
-    onUpdateLabOrder(updated);
-    if (selectedOrder?.id === order.id) setSelectedPatientOrder(updated);
 
     toast.success(`Result PDF downloaded & WhatsApp opened for ${order.patientName} (${rawPhone})!`);
   };
@@ -277,39 +235,13 @@ Thank you for choosing TekiMed Healthcare Services!`;
 
   return (
     <div className="space-y-6 font-sans">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-purple-950 via-slate-900 to-indigo-950 p-6 rounded-2xl text-white shadow-lg border border-purple-900/50">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
         <div>
-          <div className="flex items-center gap-2 mb-1 flex-wrap">
-            <Badge className="bg-purple-500/20 text-purple-300 border-purple-400/30 text-xs">Diagnostic LIMS Suite</Badge>
-            <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-400/30 text-[10px]">
-              5-Min Rapid Turnaround & 1-Click WhatsApp
-            </Badge>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <FlaskConical className="w-6 h-6 text-purple-400" /> Laboratory Information System
-          </h1>
-          <p className="text-slate-300 text-xs mt-1">
-            Specimen accessioning, rapid 5-minute result entry, likely issue selection, branded PDF reports, and 1-click WhatsApp delivery.
-          </p>
+          <h1 className="text-xl font-semibold text-foreground">Laboratory</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Collect samples, run tests and review results.</p>
         </div>
-
-        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
-          {onOpenCatalogManager && (
-            <button
-              type="button"
-              onClick={onOpenCatalogManager}
-              className="px-3 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm"
-            >
-              <FlaskConical className="w-3.5 h-3.5" />
-              <span>Manage Lab Catalog</span>
-            </button>
-          )}
-          <Badge className="bg-purple-900/80 text-purple-200 border-purple-700 px-3 py-1.5 text-xs">
-            {labOrders.filter(l => l.orderStatus === 'PROCESSING').length} In Work Queue
-          </Badge>
-        </div>
-      </div>
+        {onOpenCatalogManager && <Button variant="outline" onClick={onOpenCatalogManager}>Tests &amp; Prices</Button>}
+      </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Worklist Column */}
@@ -317,7 +249,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
           <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-sm font-semibold text-slate-900 dark:text-slate-100">Lab Order Work Queue</CardTitle>
+                <CardTitle className="text-sm font-semibold text-slate-900 dark:text-slate-100">Test Queue</CardTitle>
                 <Badge variant="outline" className="text-xs">{filteredOrders.length} Orders</Badge>
               </div>
 
@@ -325,7 +257,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
               <div className="flex gap-1 overflow-x-auto pt-2 pb-1">
                 {(['ALL', 'PROCESSING', 'RESULT_ENTERED', 'RELEASED'] as const).map((st) => (
                   <Button
-                    key={st}
+                    key={{ALL: 'All', PROCESSING: 'Run Tests', RESULT_ENTERED: 'Review Results', RELEASED: 'Completed'}[st]}
                     size="sm"
                     variant={activeFilter === st ? 'default' : 'outline'}
                     className={`text-[10px] h-7 ${activeFilter === st ? 'bg-purple-600 text-white' : ''}`}
@@ -339,7 +271,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
               <div className="relative mt-2">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                 <Input 
-                  placeholder="Search accession, patient, test..." 
+                  placeholder="Search patient, sample ID or test" 
                   className="pl-9 bg-slate-50 dark:bg-slate-900 text-xs"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -354,7 +286,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
                 filteredOrders.map((order) => {
                   const isSelected = selectedOrder?.id === order.id;
                   const pat = patients.find(p => p.id === order.patientId || p.mrn === order.mrn);
-                  const phone = pat?.phone || order.patientPhone || '+234 803 123 4567';
+                  const phone = pat?.phone || order.patientPhone || 'Not provided';
 
                   return (
                     <div
@@ -372,7 +304,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
                           order.orderStatus === 'RELEASED' ? 'bg-emerald-100 text-emerald-800' :
                           order.orderStatus === 'RESULT_ENTERED' ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-800'
                         }`}>
-                          {order.orderStatus}
+                          {({PROCESSING: 'In progress', RESULT_ENTERED: 'Review result', VALIDATED: 'Approved', RELEASED: 'Completed'} as Record<string, string>)[order.orderStatus] || order.orderStatus}
                         </Badge>
                       </div>
 
@@ -433,23 +365,14 @@ Thank you for choosing TekiMed Healthcare Services!`;
                   <div className="flex items-center gap-2 flex-wrap shrink-0">
                     {selectedOrder.sampleStatus === 'Awaiting Collection' && (
                       <Button size="sm" onClick={() => handleCollectSample(selectedOrder)} className="bg-purple-600 text-white text-xs">
-                        Collect Specimen
+                        Collect Sample
                       </Button>
                     )}
-
-                    {/* RAPID 5-MIN POPULATE & RELEASE BUTTON */}
-                    <Button 
-                      size="sm" 
-                      onClick={handleRapid5MinRelease} 
-                      className="bg-amber-600 hover:bg-amber-500 text-white text-xs gap-1.5 font-bold shadow-2xs"
-                      title="Auto-fill parameters & release result in < 5 minutes"
-                    >
-                      <Sparkles className="w-3.5 h-3.5" /> 5-Min Rapid Release
-                    </Button>
 
                     {/* 1-CLICK WHATSAPP SHARE BUTTON */}
                     <Button 
                       size="sm" 
+                      disabled={selectedOrder.orderStatus !== 'RELEASED'}
                       onClick={() => handleSendWhatsAppResult(selectedOrder)} 
                       className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs gap-1.5 font-bold shadow-sm"
                       title="Download PDF report & send directly to patient's WhatsApp"
@@ -466,13 +389,13 @@ Thank you for choosing TekiMed Healthcare Services!`;
                 </div>
               </CardHeader>
 
-              <CardContent className="p-6 space-y-5">
+              <CardContent className="p-3 sm:p-6 space-y-4">
                 {/* LIKELY ISSUE / DIAGNOSIS SELECTION PANEL */}
                 <div className="p-4 rounded-2xl bg-purple-500/10 border border-purple-500/30 space-y-2.5">
                   <div className="flex items-center justify-between gap-2 flex-wrap">
                     <label className="text-xs font-bold text-purple-900 dark:text-purple-300 flex items-center gap-1.5">
                       <FlaskConical className="w-4 h-4 text-purple-600" />
-                      Select Likely Issue / Diagnostic Finding *
+                      Clinical Finding (optional)
                     </label>
                     <button
                       type="button"
@@ -497,6 +420,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
                       onChange={(e) => setLikelyIssue(e.target.value)}
                       className="w-full h-9 rounded-xl border border-input bg-white dark:bg-zinc-950 px-3 text-xs font-semibold focus:outline-none"
                     >
+                      <option value="">Select a finding (optional)</option>
                       {COMMON_LAB_FINDINGS.map(finding => (
                         <option key={finding} value={finding}>{finding}</option>
                       ))}
@@ -507,17 +431,17 @@ Thank you for choosing TekiMed Healthcare Services!`;
                 {/* Result Parameters Table */}
                 <div className="space-y-3">
                   <h3 className="text-xs font-semibold text-slate-900 dark:text-slate-100 uppercase tracking-wider">
-                    Structured Laboratory Parameters
+                    Test Results
                   </h3>
 
                   {(() => {
-                    const catalogItem = labCatalog.find(c => c.id === selectedOrder.testId) || labCatalog[0];
+                    const catalogItem = labCatalog.find(c => c.id === selectedOrder.testId) ;
                     const params = catalogItem?.parameters || [
                       { id: 'g1', name: 'Primary Finding', referenceRange: 'Normal', fieldType: 'text' }
                     ];
 
                     return (
-                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden text-xs">
+                      <div className="border border-slate-200 dark:border-slate-800 rounded-xl overflow-x-auto text-sm">
                         <table className="w-full text-left">
                           <thead className="bg-slate-50 dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 text-slate-600">
                             <tr>
@@ -612,11 +536,11 @@ Thank you for choosing TekiMed Healthcare Services!`;
 
                   <div className="flex items-center gap-2 flex-wrap">
                     <Button onClick={handleSaveResult} size="sm" variant="outline" className="text-xs">
-                      Save Draft Result
+                      Save Result
                     </Button>
 
                     <Button onClick={handleValidateAndRelease} size="sm" className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs gap-1.5 font-bold">
-                      <ShieldCheck className="w-4 h-4" /> Validate & Release Report
+                      <ShieldCheck className="w-4 h-4" /> Approve Result
                     </Button>
                   </div>
                 </div>
@@ -650,9 +574,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
                 <div className="flex items-center gap-3">
                   <img src={companyLogo} alt="Logo" className="w-12 h-12 object-contain" />
                   <div>
-                    <h2 className="text-xl font-bold text-slate-900 tracking-tight">TEKIMED HEALTHCARE DIAGNOSTICS</h2>
-                    <p className="text-[11px] text-slate-500">12 Commercial Avenue, Healthcare District, Abuja • Tel: +234 800 835 4742</p>
-                    <p className="text-[10px] text-slate-400 font-mono">ISO 15189 Certified Pathology Laboratory</p>
+                    <h2 className="text-xl font-bold text-slate-900 tracking-tight">TEKILAB DIAGNOSTICS</h2>
                   </div>
                 </div>
 
@@ -731,7 +653,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
                 </div>
 
                 <div className="text-right space-y-1">
-                  <p className="font-bold text-slate-900">{selectedOrder.validatedByName || 'Dr. Samuel Vance'}</p>
+                  <p className="font-bold text-slate-900">{selectedOrder.validatedByName || 'Not signed'}</p>
                   <p className="text-[10px] text-slate-500">Consultant Pathologist & Microbiologist</p>
                 </div>
               </div>
@@ -750,7 +672,7 @@ Thank you for choosing TekiMed Healthcare Services!`;
                 }} 
                 className="bg-emerald-600 hover:bg-emerald-500 text-white gap-2 font-bold"
               >
-                <MessageCircle className="w-4 h-4" /> 1-Click Send to WhatsApp
+                <MessageCircle className="w-4 h-4" /> Open WhatsApp
               </Button>
 
               <Button 
