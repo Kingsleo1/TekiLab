@@ -63,6 +63,10 @@ export function RadiologyView({
   const handleApproveAndRelease = () => {
     if (!selectedOrder) return;
 
+    if (!findingsNotes.trim() || !impressionNotes.trim() || !(currentUser?.displayName || currentUser?.name)) {
+      toast.error('Enter findings and conclusion and sign in before approving.');
+      return;
+    }
     const reportNum = `TM-RAD-2026-${Math.floor(10000 + Math.random() * 90000)}`;
     const updated: ImagingOrder = {
       ...selectedOrder,
@@ -72,7 +76,7 @@ export function RadiologyView({
       findingsNotes,
       impressionNotes,
       recommendationsNotes,
-      radiologistName: currentUser?.displayName || 'Dr. Ibrahim Kyari (Consultant Radiologist)',
+      radiologistName: currentUser?.displayName || currentUser?.name,
       approvedAt: new Date().toISOString(),
       reportNumber: reportNum
     };
@@ -84,36 +88,26 @@ export function RadiologyView({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-gradient-to-r from-sky-950 via-slate-900 to-slate-950 p-6 rounded-2xl text-white shadow-lg border border-sky-900/50">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Badge className="bg-sky-500/20 text-sky-300 border-sky-400/30 text-xs">Diagnostic Imaging Suite</Badge>
-            <span className="text-xs text-slate-400">Radiology & Sonography Workflows</span>
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2">
-            <FileSearch className="w-6 h-6 text-sky-400" /> Radiology & Medical Imaging
-          </h1>
-          <p className="text-slate-300 text-xs mt-1">
-            Worklists for X-Ray, Ultrasound, CT Scan, MRI, ECG, and structured radiologist reporting with DICOM/PACS readiness.
-          </p>
+          <h1 className="text-xl font-semibold text-foreground">Radiology</h1>
+          <p className="mt-1 text-sm text-muted-foreground">Manage scans and reports.</p>
         </div>
-
-        <Badge className="bg-sky-900/80 text-sky-200 border-sky-700 px-3 py-1.5 text-xs">
-          {imagingOrders.filter(i => o => o.orderStatus !== 'Released').length} Scans Scheduled
-        </Badge>
-      </div>
+        <span className="text-sm text-muted-foreground">
+          {imagingOrders.filter(order => order.orderStatus !== 'Released').length} pending scans
+        </span>
+      </header>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Worklist */}
         <div className="lg:col-span-4 space-y-4">
           <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold text-slate-900 dark:text-slate-100">Radiology Workqueue</CardTitle>
+              <CardTitle className="text-sm font-semibold text-slate-900 dark:text-slate-100">Scan Queue</CardTitle>
               <div className="relative mt-2">
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                 <Input 
-                  placeholder="Search MRN, patient, scan..." 
+                  placeholder="Search patient, ID or scan" 
                   className="pl-9 bg-slate-50 dark:bg-slate-900 text-xs"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
@@ -158,7 +152,7 @@ export function RadiologyView({
           {selectedOrder ? (
             <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
               <CardHeader className="bg-slate-50/50 dark:bg-slate-900/50 border-b border-slate-200 dark:border-slate-800 pb-4">
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <h2 className="text-lg font-bold text-slate-900 dark:text-slate-100">{selectedOrder.testName}</h2>
                     <p className="text-xs text-slate-500 mt-0.5">
@@ -166,12 +160,12 @@ export function RadiologyView({
                     </p>
                   </div>
 
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     <Button size="sm" onClick={() => setIsPreviewPdfOpen(true)} variant="outline" className="gap-2 text-xs">
                       <Printer className="w-3.5 h-3.5 text-sky-600" /> Preview PDF Report
                     </Button>
                     <Button size="sm" onClick={handleApproveAndRelease} className="bg-emerald-600 hover:bg-emerald-500 text-white text-xs gap-2">
-                      <ShieldCheck className="w-4 h-4" /> Approve & Sign Report
+                      <ShieldCheck className="w-4 h-4" /> Approve Report
                     </Button>
                   </div>
                 </div>
@@ -179,7 +173,7 @@ export function RadiologyView({
 
               <CardContent className="p-6 space-y-4 text-xs">
                 <div>
-                  <label className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Clinical Indication</label>
+                  <label className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Reason for Scan</label>
                   <Input value={clinicalIndication} onChange={(e) => setClinicalIndication(e.target.value)} placeholder="Reason for imaging examination..." />
                 </div>
 
@@ -189,7 +183,7 @@ export function RadiologyView({
                 </div>
 
                 <div>
-                  <label className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Radiological Findings *</label>
+                  <label className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Findings *</label>
                   <textarea 
                     className="w-full min-h-[100px] p-3 rounded-lg border border-input bg-background text-xs"
                     placeholder="Detailed radiological observations across anatomical sites..."
@@ -230,7 +224,7 @@ export function RadiologyView({
           {selectedOrder && (
             <div className="p-6 bg-white text-slate-900 rounded-xl border border-slate-200 space-y-4 text-xs font-sans">
               <div className="border-b border-slate-200 pb-3">
-                <h3 className="text-lg font-bold text-slate-900">TEKIMED DIAGNOSTIC IMAGING CENTER</h3>
+                <h3 className="text-lg font-bold text-slate-900">TEKILAB DIAGNOSTIC IMAGING CENTER</h3>
                 <p className="text-[10px] text-slate-500">Official Radiologist Consultation Report</p>
               </div>
 
@@ -243,17 +237,17 @@ export function RadiologyView({
 
               <div>
                 <strong>FINDINGS:</strong>
-                <p className="mt-1 text-slate-700 leading-relaxed">{findingsNotes || 'Normal radiological findings.'}</p>
+                <p className="mt-1 text-slate-700 leading-relaxed">{findingsNotes || 'Findings not entered.'}</p>
               </div>
 
               <div>
                 <strong>IMPRESSION:</strong>
-                <p className="mt-1 font-semibold text-slate-900 bg-sky-50 p-2 rounded border border-sky-200">{impressionNotes || 'No acute cardiopulmonary or structural lesion.'}</p>
+                <p className="mt-1 font-semibold text-slate-900 bg-sky-50 p-2 rounded border border-sky-200">{impressionNotes || 'Conclusion not entered.'}</p>
               </div>
 
               <div className="pt-4 border-t border-slate-200 flex justify-between items-center text-[10px] text-slate-500">
-                <span>Verified digitally via TekiMed Imaging System</span>
-                <span className="font-bold text-slate-900">{selectedOrder.radiologistName || 'Dr. Ibrahim Kyari'}</span>
+                <span>TekiLab Imaging</span>
+                <span className="font-bold text-slate-900">{selectedOrder.radiologistName || 'Not signed'}</span>
               </div>
             </div>
           )}
