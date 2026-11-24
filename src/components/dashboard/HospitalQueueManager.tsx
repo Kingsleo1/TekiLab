@@ -157,11 +157,11 @@ export function HospitalQueueManager({
   };
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-10 font-sans text-neutral-950">
+    <div className="w-full max-w-7xl mx-auto space-y-4 pb-10 font-sans text-neutral-950">
       {/* Header */}
-      <div className="bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+      <div className="bg-white border border-neutral-200 rounded-xl p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-950">
+          <h1 className="text-xl font-semibold tracking-tight text-neutral-950">
             Live Queue &amp; Patient Flow
           </h1>
           <p className="text-sm text-neutral-500 mt-0.5">
@@ -282,25 +282,19 @@ export function HospitalQueueManager({
           Queue is clear. Check in a walk-in client or wait for an online booking.
         </div>
       ) : viewMode === 'list' ? (
-        <div className="bg-white border border-neutral-200 rounded-2xl divide-y divide-neutral-100 overflow-hidden shadow-xs">
-          <AnimatePresence>
-            {filteredTickets.map((ticket) => (
-              <motion.button
-                key={ticket.id}
-                layout
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                type="button"
-                onClick={() => setSelectedTicket(ticket)}
-                className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-blue-50/40 transition-colors cursor-pointer group"
-              >
-                <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700">
-                  {ticket.patientName}
-                </span>
-                <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600" />
-              </motion.button>
-            ))}
-          </AnimatePresence>
+        <div className="bg-white border border-neutral-200 rounded-xl overflow-x-auto shadow-xs">
+          <div className="min-w-[760px] divide-y divide-neutral-100">
+            <div className="grid grid-cols-[40px_110px_minmax(180px,1fr)_130px_100px_100px_24px] items-center gap-3 px-4 py-3 bg-neutral-50 text-xs font-semibold text-neutral-500 whitespace-nowrap">
+              <span>No.</span><span>Queue ID</span><span>Patient</span><span>Department</span><span>Source</span><span>Status</span><span />
+            </div>
+            <AnimatePresence>
+              {filteredTickets.map((ticket, index) => (
+                <motion.button key={ticket.id} layout initial={{ opacity: 0 }} animate={{ opacity: 1 }} type="button" onClick={() => setSelectedTicket(ticket)} className="w-full grid grid-cols-[40px_110px_minmax(180px,1fr)_130px_100px_100px_24px] items-center gap-3 px-4 py-3 text-left text-sm whitespace-nowrap hover:bg-blue-50/40 focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-500">
+                  <span className="text-neutral-500 tabular-nums">{index + 1}</span><span className="font-mono text-xs text-blue-700 truncate">{ticket.ticketNumber}</span><span className="font-semibold text-neutral-950 truncate" title={ticket.patientName}>{ticket.patientName}</span><span className="text-neutral-600 truncate" title={ticket.department}>{ticket.department || '—'}</span><span className="text-neutral-600">{ticket.orderSource === 'ONLINE' ? 'Online' : 'Walk-in'}</span><span className="text-neutral-700 truncate" title={ticket.status}>{ticket.status || '—'}</span><ChevronRight className="w-4 h-4 text-neutral-400" />
+                </motion.button>
+              ))}
+            </AnimatePresence>
+          </div>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">

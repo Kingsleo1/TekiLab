@@ -572,9 +572,9 @@ export function ClinicalEMRView({
   };
 
   return (
-    <div className="space-y-6 font-sans max-w-7xl mx-auto pb-16">
+    <div className="space-y-4 font-sans w-full max-w-7xl mx-auto pb-16">
       {/* Top Banner & Quick Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-900 text-white p-6 rounded-3xl shadow-xl border border-slate-800 relative overflow-hidden">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-slate-900 text-white p-4 sm:p-6 rounded-xl border border-slate-800 relative overflow-hidden">
         <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-80 h-80 rounded-full bg-emerald-500/10 blur-3xl pointer-events-none" />
         <div className="relative z-10 space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
@@ -585,7 +585,7 @@ export function ClinicalEMRView({
               Longitudinal Health Records & Inter-Department Routing
             </span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-white flex items-center gap-2.5">
+          <h1 className="text-xl font-semibold tracking-tight text-white flex items-center gap-2.5">
             <Stethoscope className="w-6 h-6 text-emerald-400" /> 
             Clinician Consultation & Patient EMR
           </h1>
@@ -622,7 +622,7 @@ export function ClinicalEMRView({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Left Column: Active Patient Information, Triage Vitals, & Prior Medical History */}
         <div className="lg:col-span-4 space-y-6">
           {/* 1. Patient Selector & Demographics Card */}

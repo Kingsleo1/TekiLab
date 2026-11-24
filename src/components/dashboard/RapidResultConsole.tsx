@@ -433,7 +433,7 @@ export function RapidResultConsole({
 
   const filteredPatients = useMemo(() => {
     const q = patientSearch.trim().toLowerCase();
-    if (!q) return patients.slice(0, 5);
+    if (!q) return patients;
     return patients
       .filter(
         (p) =>
@@ -441,7 +441,7 @@ export function RapidResultConsole({
           p.phone?.toLowerCase().includes(q) ||
           p.mrn?.toLowerCase().includes(q)
       )
-      .slice(0, 6);
+      ;
   }, [patients, patientSearch]);
 
   const handleSelectExistingPatient = (p: PatientRecord) => {
@@ -920,25 +920,16 @@ export function RapidResultConsole({
               />
             </div>
 
-            {filteredPatients.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {filteredPatients.map((p) => (
-                  <button
-                    key={p.id}
-                    type="button"
-                    onClick={() => handleSelectExistingPatient(p)}
-                    className={`px-2.5 py-1.5 rounded-lg text-xs font-medium border transition-colors cursor-pointer ${
-                      selectedPatientId === p.id
-                        ? 'bg-neutral-950 text-white border-neutral-950'
-                        : 'bg-white text-neutral-700 border-neutral-200 hover:border-blue-400 hover:text-blue-700'
-                    }`}
-                  >
-                    {p.fullName}
-                  </button>
+            <div className="space-y-1.5">
+              <label htmlFor="rapid-patient-select" className="block text-xs font-semibold text-neutral-700">Select existing patient</label>
+              <select id="rapid-patient-select" value={filteredPatients.some(p => p.id === selectedPatientId) ? selectedPatientId : ''} onChange={(e) => { const patient = filteredPatients.find(p => p.id === e.target.value); if (patient) handleSelectExistingPatient(patient); }} className="w-full h-11 rounded-lg border border-neutral-200 bg-white px-3 text-sm text-neutral-900 focus-visible:ring-2 focus-visible:ring-blue-500">
+                <option value="" disabled>{filteredPatients.length ? 'Choose a patient' : 'No matching patients'}</option>
+                {filteredPatients.map((p, index) => (
+                  <option key={p.id} value={p.id}>{index + 1}. {p.fullName} — {p.mrn || 'No MRN'}</option>
                 ))}
-              </div>
-            )}
-
+              </select>
+              <p className="text-xs text-neutral-500">Search above to narrow the list, then select a patient by name and record number.</p>
+            </div>
             <div className="border-t border-neutral-100 pt-4 space-y-3.5">
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Patient Full Name *</label>

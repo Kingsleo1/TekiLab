@@ -225,11 +225,11 @@ export function PatientCentral({
     : null;
 
   return (
-    <div className="max-w-5xl mx-auto space-y-6 pb-10 font-sans text-neutral-950">
+    <div className="w-full max-w-7xl mx-auto space-y-4 pb-10 font-sans text-neutral-950">
       {/* Clean Minimalist Header */}
-      <div className="bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+      <div className="bg-white border border-neutral-200 rounded-xl p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-950">
+          <h1 className="text-xl font-semibold tracking-tight text-neutral-950">
             Registered Patients
           </h1>
           <p className="text-sm text-neutral-500 mt-0.5">
