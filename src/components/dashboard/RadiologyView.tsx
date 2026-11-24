@@ -88,7 +88,7 @@ export function RadiologyView({
 
   return (
     <div className="space-y-6">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-4 sm:px-6">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Radiology</h1>
           <p className="mt-1 text-sm text-muted-foreground">Manage scans and reports.</p>
@@ -98,7 +98,7 @@ export function RadiologyView({
         </span>
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Left Worklist */}
         <div className="lg:col-span-4 space-y-4">
           <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
@@ -123,7 +123,7 @@ export function RadiologyView({
                   return (
                     <div
                       key={order.id}
-                      onClick={() => handleSelectOrder(order)}
+                      role="button" tabIndex={0} aria-pressed={isSelected} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleSelectOrder(order); } }} onClick={() => handleSelectOrder(order)}
                       className={`p-3 rounded-xl border transition-all cursor-pointer ${
                         isSelected 
                           ? 'bg-sky-50 dark:bg-sky-950/40 border-sky-400 dark:border-sky-800 shadow-sm' 
@@ -131,7 +131,7 @@ export function RadiologyView({
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{order.testName}</span>
+                        <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">{order.testName}</span>
                         <Badge className="text-[10px] bg-sky-100 text-sky-800">{order.orderStatus}</Badge>
                       </div>
 

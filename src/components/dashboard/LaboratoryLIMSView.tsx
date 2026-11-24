@@ -235,7 +235,7 @@ export function LaboratoryLIMSView({
 
   return (
     <div className="space-y-6 font-sans">
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-4 sm:px-6">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Laboratory</h1>
           <p className="mt-1 text-sm text-muted-foreground">Collect samples, run tests and review results.</p>
@@ -243,7 +243,7 @@ export function LaboratoryLIMSView({
         {onOpenCatalogManager && <Button variant="outline" onClick={onOpenCatalogManager}>Tests &amp; Prices</Button>}
       </header>
 
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
         {/* Left Worklist Column */}
         <div className="lg:col-span-5 space-y-4">
           <Card className="border-slate-200 dark:border-slate-800 shadow-sm">
@@ -263,7 +263,7 @@ export function LaboratoryLIMSView({
                     className={`text-[10px] h-7 ${activeFilter === st ? 'bg-purple-600 text-white' : ''}`}
                     onClick={() => setActiveFilter(st)}
                   >
-                    {st}
+                    {{ALL: 'All', PROCESSING: 'Run tests', RESULT_ENTERED: 'Review results', RELEASED: 'Completed'}[st]}
                   </Button>
                 ))}
               </div>
@@ -291,7 +291,7 @@ export function LaboratoryLIMSView({
                   return (
                     <div
                       key={order.id}
-                      onClick={() => handleSelectOrder(order)}
+                      role="button" tabIndex={0} aria-pressed={isSelected} onKeyDown={(e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); handleSelectOrder(order); } }} onClick={() => handleSelectOrder(order)}
                       className={`p-3 rounded-xl border transition-all cursor-pointer ${
                         isSelected 
                           ? 'bg-purple-50 dark:bg-purple-950/40 border-purple-400 dark:border-purple-800 shadow-sm' 
@@ -299,7 +299,7 @@ export function LaboratoryLIMSView({
                       }`}
                     >
                       <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-slate-900 dark:text-slate-100">{order.testName}</span>
+                        <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">{order.testName}</span>
                         <Badge className={`text-[10px] ${
                           order.orderStatus === 'RELEASED' ? 'bg-emerald-100 text-emerald-800' :
                           order.orderStatus === 'RESULT_ENTERED' ? 'bg-amber-100 text-amber-800' : 'bg-purple-100 text-purple-800'
