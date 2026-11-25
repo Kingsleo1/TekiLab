@@ -1,3 +1,4 @@
+import {TEKILAB_ROLES,LIMS_PERMISSIONS_CATALOG,getRoleDefinition} from '../../../config/roles';
 import React, { useState, useEffect } from 'react';
 import { apiService, isSupabaseConfigured, supabase } from '../../../services/api';
 import { 
@@ -70,165 +71,9 @@ import { toast } from 'sonner';
 import { generateSafePassword, SAMPLE_PASSWORDS, evaluatePasswordStrength } from '@/src/lib/passwordUtils';
 
 // Define DEFAULT permission sets per role
-const DEFAULT_PERMISSIONS_BY_ROLE: Record<string, string[]> = {
-  'Kernel Admin': [
-    'canAccessPOS', 
-    'canManageStaff', 
-    'canManageCustomers', 
-    'canManageInventory', 
-    'canAccessSuppliers', 
-    'canAccessExpenses', 
-    'canAccessTransfers', 
-    'canAccessWarehouse', 
-    'canViewReports', 
-    'canManageBranches', 
-    'canManageMarketing', 
-    'canManageIntegrations', 
-    'canAdjustSettings', 
-    'canApplyDiscounts', 
-    'canDispenseControlled'
-  ],
-  'Store Manager': [
-    'canAccessPOS', 
-    'canManageStaff', 
-    'canManageCustomers', 
-    'canManageInventory', 
-    'canAccessSuppliers', 
-    'canAccessExpenses', 
-    'canAccessTransfers', 
-    'canAccessWarehouse', 
-    'canViewReports', 
-    'canAdjustSettings', 
-    'canApplyDiscounts', 
-    'canDispenseControlled'
-  ],
-  'Terminal Manager': [
-    'canAccessPOS', 
-    'canManageCustomers', 
-    'canManageInventory', 
-    'canAccessTransfers', 
-    'canAccessSuppliers', 
-    'canApplyDiscounts', 
-    'canDispenseControlled'
-  ],
-  'Certified Dispenser': [
-    'canAccessPOS', 
-    'canManageInventory', 
-    'canDispenseControlled'
-  ],
-  'POS operator': [
-    'canAccessPOS', 
-    'canManageCustomers'
-  ],
-  'Logistics Coordinator': [
-    'canManageInventory', 
-    'canAccessTransfers', 
-    'canAccessSuppliers', 
-    'canAccessWarehouse'
-  ]
-};
-
-// Define list of customizable granular capabilities
-const GRANULAR_CAPABILITIES = [
-  {
-    key: 'canAccessPOS',
-    title: 'Sales Hub & POS',
-    description: 'Access Point of Sale, process customer orders, and view sales and owing records.',
-    icon: <ShoppingCart size={14} className="text-blue-600" />
-  },
-  {
-    key: 'canManageStaff',
-    title: 'Manage Staff',
-    description: 'Add personnel, authenticate credentials, and configure access permissions.',
-    icon: <Users size={14} className="text-teal-600" />
-  },
-  {
-    key: 'canManageCustomers',
-    title: 'Customer Central',
-    description: 'Manage patient profiles, customer debt accounts, and pharmacy credit records.',
-    icon: <UserIcon size={14} className="text-indigo-600" />
-  },
-  {
-    key: 'canManageInventory',
-    title: 'Products & Inventory',
-    description: 'Manage medicine catalogs, adjust stock counts, batch numbers, and prices.',
-    icon: <Package size={14} className="text-amber-600" />
-  },
-  {
-    key: 'canAccessSuppliers',
-    title: 'Supply & Procurement',
-    description: 'Onboard distributors, manage supply records, and register new supplies.',
-    icon: <Truck size={14} className="text-orange-600" />
-  },
-  {
-    key: 'canAccessExpenses',
-    title: 'Expenses Ledger',
-    description: 'Log operating expenditures, verify bills, and monitor branch expenditures.',
-    icon: <CreditCard size={14} className="text-rose-600" />
-  },
-  {
-    key: 'canAccessTransfers',
-    title: 'Stock Transfers',
-    description: 'Initiate and receive stock transfers between branches and central warehouse.',
-    icon: <ArrowRightLeft size={14} className="text-emerald-600" />
-  },
-  {
-    key: 'canAccessWarehouse',
-    title: 'Warehouse Controller',
-    description: 'Manage central warehouse bulk stocks, receiving docks, and distribution.',
-    icon: <Warehouse size={14} className="text-purple-600" />
-  },
-  {
-    key: 'canViewReports',
-    title: 'Reports & Analytics',
-    description: 'Access business intelligence, revenue metrics, and audit log analysis.',
-    icon: <BarChart3 size={14} className="text-green-600" />
-  },
-  {
-    key: 'canManageBranches',
-    title: 'Branches Management',
-    description: 'Configure and monitor multi-branch pharmacy nodes and stores.',
-    icon: <Store size={14} className="text-cyan-600" />
-  },
-  {
-    key: 'canManageMarketing',
-    title: 'Marketing Console',
-    description: 'Manage pharmacy campaigns, promotional broadcasts, and alerts.',
-    icon: <Megaphone size={14} className="text-pink-600" />
-  },
-  {
-    key: 'canManageIntegrations',
-    title: 'Integrations & APIs',
-    description: 'Manage ERP system connectors, hardware devices, and API credentials.',
-    icon: <Zap size={14} className="text-yellow-600" />
-  },
-  {
-    key: 'canAdjustSettings',
-    title: 'System Settings',
-    description: 'Configure system preferences, operational defaults, and receipt parameters.',
-    icon: <Settings size={14} className="text-slate-600" />
-  },
-  {
-    key: 'canApplyDiscounts',
-    title: 'POS Markdowns & Discounts',
-    description: 'Grant price discounts or customize unit pricing directly on POS checkout.',
-    icon: <Check size={14} className="text-amber-600" />
-  },
-  {
-    key: 'canDispenseControlled',
-    title: 'Dispense Controlled Meds',
-    description: 'Dispense regulated, prescription-only, or restricted pharmaceuticals.',
-    icon: <ShieldCheck size={14} className="text-blue-600" />
-  }
-];
-
-const DEFAULT_STAFF = [
-  { id: 'ST-01', name: 'James Wilson', role: 'Store Manager', email: 'james@tekipharm.com', status: 'online', level: 4, permissions: ['canAccessPOS', 'canManageInventory', 'canAccessTransfers', 'canAccessSuppliers', 'canAccessExpenses'] },
-  { id: 'ST-02', name: 'Sarah Chen', role: 'Terminal Manager', email: 'sarah@tekipharm.com', status: 'online', level: 3, permissions: ['canAccessPOS', 'canManageInventory', 'canAccessTransfers'] },
-  { id: 'ST-03', name: 'David Okafor', role: 'Certified Dispenser', email: 'david@tekipharm.com', status: 'online', level: 2, permissions: ['canAccessPOS', 'canManageInventory'] },
-  { id: 'ST-04', name: 'Elena Rodriguez', role: 'POS operator', email: 'elena@tekipharm.com', status: 'dormant', level: 1, permissions: ['canAccessPOS'] },
-  { id: 'ST-05', name: 'Kingsley Agu', role: 'Logistics Coordinator', email: 'kingsley@tekipharm.com', status: 'online', level: 1, permissions: ['canAccessTransfers'] }
-];
+const DEFAULT_PERMISSIONS_BY_ROLE:Record<string,string[]>=Object.fromEntries(TEKILAB_ROLES.map(r=>[r.label,r.permissions]));
+const GRANULAR_CAPABILITIES=LIMS_PERMISSIONS_CATALOG.map(p=>({key:p.key,title:p.label,description:p.description,icon:<ShieldCheck size={14}/>}));
+const DEFAULT_STAFF:any[]=[];
 
 export function UserManagementView({ selectedBranchId }: { selectedBranchId?: string } = {}) {
   const [searchQuery, setSearchQuery] = useState('');
@@ -239,7 +84,7 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
   const [branches, setBranches] = useState<any[]>([]);
   const [formData, setFormData] = useState({
     name: '',
-    role: 'Terminal Manager',
+    role: 'Medical Lab Scientist',
     email: '',
     password: '',
     branchId: selectedBranchId && selectedBranchId !== 'all' ? selectedBranchId : 'pharma-1'
@@ -257,7 +102,7 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
       if (data && data.length > 0) {
         const upgraded = data.map((s: any) => ({
           ...s,
-          permissions: s.permissions || DEFAULT_PERMISSIONS_BY_ROLE[s.role] || ['canAccessPOS']
+          role:getRoleDefinition(s.role).label, permissions:(s.permissions || getRoleDefinition(s.role).permissions).filter((p:string)=>LIMS_PERMISSIONS_CATALOG.some(item=>item.key===p))
         }));
         setStaffList(upgraded);
       } else {
@@ -345,9 +190,9 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
       email: formData.email.trim().toLowerCase(),
       password: formData.password.trim(),
       status: 'online' as const,
-      level: levelsMap[formData.role] || 1,
+      level: getRoleDefinition(formData.role).level,
       branchId: targetBranch,
-      permissions: DEFAULT_PERMISSIONS_BY_ROLE[formData.role] || ['canAccessPOS'],
+      permissions: DEFAULT_PERMISSIONS_BY_ROLE[formData.role] || [],
       joinDate: new Date().toISOString().split('T')[0],
       createdAt: new Date().toISOString()
     };
@@ -360,7 +205,7 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
       });
       setFormData({ 
         name: '', 
-        role: 'Terminal Manager', 
+        role: 'Medical Lab Scientist',
         email: '', 
         password: '',
         branchId: targetBranch
@@ -387,9 +232,9 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
   // Open Permissions adjustment dialog
   const handleOpenAdjustPermissions = (staff: any) => {
     setSelectedStaffForPermissions(staff);
-    setEditRole(staff.role);
+    setEditRole(getRoleDefinition(staff.role).label);
     setEditLevel(staff.level || 1);
-    setEditPermissions(staff.permissions || DEFAULT_PERMISSIONS_BY_ROLE[staff.role] || ['canAccessPOS']);
+    setEditPermissions(staff.permissions || DEFAULT_PERMISSIONS_BY_ROLE[staff.role] || []);
   };
 
   // Toggle dynamic capability
@@ -404,14 +249,16 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
   // Save changes to state & database
   const handleSavePermissions = async () => {
     if (!selectedStaffForPermissions) return;
+    if(!selectedStaffForPermissions.name?.trim()){toast.error('Staff name is required.');return;}
     try {
       await apiService.staff.update(selectedStaffForPermissions.id, {
+        name: selectedStaffForPermissions.name,
         role: editRole,
         level: editLevel,
         permissions: editPermissions
       });
       await loadStaffData();
-      toast.success(`Access permissions for ${selectedStaffForPermissions.name} updated on database!`);
+      toast.success(`Access permissions for ${selectedStaffForPermissions.name} saved!`);
       setSelectedStaffForPermissions(null);
     } catch (err) {
       toast.error('Failed to update access permissions on database');
@@ -525,11 +372,7 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
                             value={formData.role}
                             onChange={(e) => setFormData({ ...formData, role: e.target.value })}
                           >
-                             <option value="Terminal Manager">Terminal Manager</option>
-                             <option value="Store Manager">Store Manager</option>
-                             <option value="Certified Dispenser">Certified Dispenser</option>
-                             <option value="POS operator">POS Operator</option>
-                             <option value="Logistics Coordinator">Logistics Coordinator</option>
+                             {TEKILAB_ROLES.filter(r=>!['patient','unassigned'].includes(r.id)).map(r=><option key={r.id} value={r.label}>{r.label}</option>)}
                           </select>
                        </div>
 
@@ -544,7 +387,7 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
                             onChange={(e) => setFormData({ ...formData, branchId: e.target.value })}
                           >
                              {branches.length === 0 ? (
-                               <option value="pharma-1">Central Pharmacy - Branch 01</option>
+                               <option value="pharma-1">Central Laboratory</option>
                              ) : (
                                branches.map(b => (
                                  <option key={b.id} value={b.id}>{b.name}</option>
@@ -559,7 +402,7 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
                        <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                        <div className="text-xs text-slate-700 leading-relaxed">
                           <span className="font-semibold text-slate-900">{formData.role} Default Clearance: </span>
-                          Grants {(DEFAULT_PERMISSIONS_BY_ROLE[formData.role] || ['canAccessPOS']).length} active module permissions. You can customize individual permissions anytime after creation.
+                          Grants {(DEFAULT_PERMISSIONS_BY_ROLE[formData.role] || []).length} active module permissions. You can customize individual permissions anytime after creation.
                        </div>
                     </div>
 
@@ -712,7 +555,7 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
               </TableHeader>
               <TableBody>
                  {filteredStaff.map((person, index) => {
-                   const currentPerms = person.permissions || DEFAULT_PERMISSIONS_BY_ROLE[person.role] || ['canAccessPOS'];
+                   const currentPerms = person.permissions || DEFAULT_PERMISSIONS_BY_ROLE[person.role] || [];
                    return (
                      <TableRow key={person.id || index} className="border-slate-50 hover:bg-slate-50 group transition-all">
                         <TableCell className="px-10 py-6">
@@ -820,6 +663,7 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
            </DialogHeader>
 
            <div className="space-y-6 py-4">
+              <label className="block text-sm font-semibold">Staff name<Input aria-label="Staff name" value={selectedStaffForPermissions?.name||''} onChange={e=>setSelectedStaffForPermissions({...selectedStaffForPermissions,name:e.target.value})}/></label>
               {/* Role & Level Configuration */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                  <div className="space-y-2">
@@ -833,17 +677,12 @@ export function UserManagementView({ selectedBranchId }: { selectedBranchId?: st
                         const newRole = e.target.value;
                         setEditRole(newRole);
                         // Presets levels & permissions based on default mappings
-                        const defaultLvl = newRole === 'Store Manager' ? 4 : newRole === 'Terminal Manager' ? 3 : newRole === 'Certified Dispenser' ? 2 : newRole === 'POS operator' ? 2 : 1;
+                        const defaultLvl = getRoleDefinition(newRole).level;
                         setEditLevel(defaultLvl);
-                        setEditPermissions(DEFAULT_PERMISSIONS_BY_ROLE[newRole] || ['canAccessPOS']);
+                        setEditPermissions(DEFAULT_PERMISSIONS_BY_ROLE[newRole] || []);
                       }}
                     >
-                       <option>Terminal Manager</option>
-                       <option>Store Manager</option>
-                       <option>Certified Dispenser</option>
-                       <option>POS operator</option>
-                       <option>Logistics Coordinator</option>
-                       <option>Kernel Admin</option>
+                       {TEKILAB_ROLES.filter(r=>!['patient','unassigned'].includes(r.id)).map(r=><option key={r.id} value={r.label}>{r.label}</option>)}
                     </select>
                  </div>
 

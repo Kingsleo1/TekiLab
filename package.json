@@ -10,12 +10,14 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test tests/workflows.test.ts tests/catalogue-qr.test.ts",
+    "test": "tsx --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts",
     "test:browser": "node tests/browser.mjs",
     "test:api": "node tests/api.mjs",
     "test:integration": "node tests/integrations.mjs",
     "test:qr": "node tests/qr-booking.mjs",
-    "test:management": "node tests/management-imaging.mjs"
+    "test:management": "node tests/management-imaging.mjs",
+    "test:dictation": "node tests/dictation.mjs",
+    "test:staff": "node tests/staff-dialogs.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

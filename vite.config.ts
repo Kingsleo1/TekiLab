@@ -1,3 +1,4 @@
+import {fileURLToPath} from 'node:url';
 import tailwindcss from '@tailwindcss/vite';
 import react from '@vitejs/plugin-react';
 import fs from 'fs';
@@ -13,7 +14,7 @@ export default defineConfig(() => {
         name: 'spa-404-fallback',
         closeBundle() {
           try {
-            const distDir = path.resolve(__dirname, 'dist');
+            const distDir = path.resolve(fileURLToPath(new URL('.', import.meta.url)), 'dist');
             const indexFile = path.join(distDir, 'index.html');
             const fallbackFile = path.join(distDir, '404.html');
             if (fs.existsSync(indexFile)) {
@@ -25,9 +26,9 @@ export default defineConfig(() => {
     ],
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
-        react: path.resolve(__dirname, './node_modules/react'),
-        'react-dom': path.resolve(__dirname, './node_modules/react-dom'),
+        '@': path.resolve(fileURLToPath(new URL('.', import.meta.url)), '.'),
+        react: path.resolve(fileURLToPath(new URL('.', import.meta.url)), './node_modules/react'),
+        'react-dom': path.resolve(fileURLToPath(new URL('.', import.meta.url)), './node_modules/react-dom'),
       },
       dedupe: ['react', 'react-dom', 'react/jsx-runtime', 'react/jsx-dev-runtime'],
     },

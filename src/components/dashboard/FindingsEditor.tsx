@@ -12,7 +12,7 @@ export function FindingsEditor({ value, onChange, label = 'Medical findings', re
     if (editor.current && editor.current.innerHTML !== sanitizeFindings(value)) editor.current.innerHTML = sanitizeFindings(value);
   }, [value]);
   useEffect(() => () => { recognition.current?.abort(); }, []);
-  useEffect(() => { recognition.current?.abort(); setListening(false); }, [readOnly]);
+  useEffect(() => { recognition.current?.abort(); recognition.current=null; setListening(false); }, [readOnly]);
   const emit = () => {
     if (!editor.current) return;
     const html = sanitizeFindings(editor.current.innerHTML);
@@ -24,15 +24,26 @@ export function FindingsEditor({ value, onChange, label = 'Medical findings', re
   const dictate = () => {
     if (listening) { recognition.current?.stop(); return; }
     setMessage('Browser dictation may use your browser provider’s speech service. Review every transcription.');
+    if (!Speech || readOnly) return;
+    recognition.current?.abort();
+    editor.current?.focus();
     const instance = new Speech(); recognition.current = instance;
-    instance.lang = 'en-NG'; instance.continuous = true; instance.interimResults = false;
+    const seen = new Set<number>();
+    instance.lang = 'en-US'; instance.continuous = true; instance.interimResults = true;
     instance.onresult = (event: any) => {
-      if (!editor.current) return;
-      const text = Array.from(event.results as any).slice(event.resultIndex).filter((r: any) => r.isFinal).map((r: any) => r[0].transcript).join(' ');
-      if (text) { editor.current.append(document.createTextNode(' ' + text)); emit(); }
+      if (!editor.current || recognition.current !== instance) return;
+      const text = Array.from(event.results as any).map((r:any,index:number)=>({r,index})).filter(({r,index})=>index>=event.resultIndex && r.isFinal && !seen.has(index)).map(({r,index})=>{seen.add(index);return r[0].transcript;}).join(' ');
+      const interim = Array.from(event.results as any).filter((r:any)=>!r.isFinal).map((r:any)=>r[0].transcript).join(' ');
+      if(interim)setMessage('Hearing: '+interim);
+      if (text) { editor.current.focus();
+        const selection=window.getSelection();
+        if(selection?.rangeCount && editor.current.contains(selection.anchorNode)) document.execCommand('insertText',false,' '+text.trim());
+        else editor.current.append(document.createTextNode(' '+text.trim()));
+        emit(); setMessage('Transcript inserted. Review before approving this report.');
+      }
     };
-    instance.onerror = (event: any) => { setMessage('Dictation stopped: ' + event.error + '. You can continue typing.'); setListening(false); };
-    instance.onend = () => setListening(false);
+    instance.onerror = (event: any) => { if(recognition.current!==instance)return; setMessage(event.error==='not-allowed'?'Allow microphone access in browser and Windows settings, then retry.':event.error==='network'?'The browser speech service could not connect. Check your connection and retry.':event.error==='audio-capture'?'No microphone is available. Check the selected recording device.':'Dictation stopped: '+event.error+'. You can continue typing.'); setListening(false); };
+    instance.onend = () => {if(recognition.current===instance){recognition.current=null;setListening(false);}};
     try { instance.start(); setListening(true); } catch { setMessage('Microphone unavailable. You can continue typing.'); }
   };
   return <div className="space-y-2 min-w-0">

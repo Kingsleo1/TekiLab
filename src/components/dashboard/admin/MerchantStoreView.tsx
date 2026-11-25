@@ -553,7 +553,7 @@ export function MerchantStoreView({ onSelectBranch }: { onSelectBranch?: (id: st
                                 <Button 
                                   variant="ghost" 
                                   size="icon" 
-                                  onClick={() => handleOpenBranchModal(branch)}
+                                  aria-label="Modify branch" onClick={() => handleOpenBranchModal(branch)}
                                   className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 rounded-xl"
                                 >
                                   <Edit size={16} />
@@ -740,7 +740,7 @@ export function MerchantStoreView({ onSelectBranch }: { onSelectBranch?: (id: st
 
       {/* --- MODAL DIALOG 1: Add / Edit Branch --- */}
       <Dialog open={isBranchModalOpen} onOpenChange={setIsBranchModalOpen}>
-        <DialogContent className="sm:max-w-lg rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+        <DialogContent className="sm:max-w-lg rounded-[2.5rem] p-0 overflow-y-auto border-none shadow-2xl bg-white">
           <div className="bg-slate-900 p-6 md:p-8 text-white relative">
             <div className="absolute top-0 right-0 w-32 h-32 bg-blue-600/20 blur-2xl rounded-full -mr-12 -mt-12"></div>
             <DialogHeader className="relative z-10">
@@ -918,7 +918,7 @@ export function MerchantStoreView({ onSelectBranch }: { onSelectBranch?: (id: st
 
       {/* --- MODAL DIALOG 2: Create Stock Request --- */}
       <Dialog open={isRequestModalOpen} onOpenChange={setIsRequestModalOpen}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-y-auto border-none shadow-2xl bg-white">
           <div className="bg-[#0F172A] p-6 md:p-8 text-white relative">
             <DialogHeader className="relative z-10">
               <DialogTitle className="text-xl font-black tracking-tight uppercase italic flex items-center gap-2 text-white">
@@ -1015,7 +1015,7 @@ export function MerchantStoreView({ onSelectBranch }: { onSelectBranch?: (id: st
 
       {/* --- MODAL DIALOG 3: Post Notice Bulletin Memo --- */}
       <Dialog open={isMemoModalOpen} onOpenChange={setIsMemoModalOpen}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+        <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-y-auto border-none shadow-2xl bg-white">
           <div className="bg-blue-600 p-6 md:p-8 text-white relative">
             <DialogHeader className="relative z-10">
               <DialogTitle className="text-xl font-black tracking-tight uppercase italic flex items-center gap-2 text-white">

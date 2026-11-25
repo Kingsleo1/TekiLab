@@ -45,6 +45,7 @@ export function TestOrderPicker({items,selectedIds,onChange,onManage,canManage,e
   {filtered.length>limit&&<button type="button" className="border rounded px-3 py-2 text-sm" onClick={()=>setLimit(n=>n+40)}>Show 40 more ({filtered.length-limit} remaining)</button>}
   <div aria-live="polite" className="rounded-lg bg-slate-50 border p-3 flex flex-wrap justify-between gap-2 text-sm">
    <strong>{chosen.length} test{chosen.length===1?'':'s'} selected</strong><strong>{naira(total)}{quoteCount>0?' + '+quoteCount+' quote required':''}</strong>
+   <ul aria-label="Selected order items" className="w-full divide-y">{chosen.map(item=><li key={item.id} className="flex justify-between gap-3 py-2"><span>{item.name}</span><button type="button" className="text-red-700 underline" onClick={()=>onChange(selectedIds.filter(id=>id!==item.id))} aria-label={'Remove '+item.name+' from order'}>Remove</button></li>)}</ul>
    <p className="w-full text-xs text-slate-500">Each selected test is ordered once. Removed tests cannot be included in new orders.</p>
   </div>
  </section>;

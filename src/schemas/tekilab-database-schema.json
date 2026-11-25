@@ -1,76 +1,176 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TekiLab LIMS Modular SaaS Database Schema (DataStax Astra DB & Supabase)",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "keyspace": "default_keyspace",
   "collections": {
     "tenant_configurations": {
       "description": "Stores per-facility modular 'Mute' feature toggles, subscription tier, 5-minute SLA targets, WhatsApp dispatch settings, and Diagnostic Instrument API Hub configuration.",
       "primaryKey": {
-        "partitionKey": ["tenant_id"]
+        "partitionKey": [
+          "tenant_id"
+        ]
       },
-      "indexes": ["tenant_slug", "subscription_tier", "updated_at"],
+      "indexes": [
+        "tenant_slug",
+        "subscription_tier",
+        "updated_at"
+      ],
       "jsonSchema": {
         "type": "object",
-        "required": ["tenant_id", "tenant_slug", "facility_name", "subscription_tier", "modules", "sla_config"],
+        "required": [
+          "tenant_id",
+          "tenant_slug",
+          "facility_name",
+          "subscription_tier",
+          "modules",
+          "sla_config"
+        ],
         "properties": {
-          "tenant_id": { "type": "string", "description": "Unique tenant identifier (UUID or slug-prefixed ID)." },
-          "tenant_slug": { "type": "string", "description": "Dedicated URL path slug for the facility portal." },
-          "facility_name": { "type": "string" },
+          "tenant_id": {
+            "type": "string",
+            "description": "Unique tenant identifier (UUID or slug-prefixed ID)."
+          },
+          "tenant_slug": {
+            "type": "string",
+            "description": "Dedicated URL path slug for the facility portal."
+          },
+          "facility_name": {
+            "type": "string"
+          },
           "subscription_tier": {
             "type": "string",
-            "enum": ["lims_core", "lims_pharmacy", "lims_emr", "hospital_full"]
+            "enum": [
+              "lims_core",
+              "lims_pharmacy",
+              "lims_emr",
+              "hospital_full"
+            ]
           },
           "brand_theme": {
             "type": "object",
             "properties": {
-              "primary": { "type": "string", "default": "#16A34A" },
-              "surface": { "type": "string", "default": "#FFFFFF" },
-              "ink": { "type": "string", "default": "#0A0A0A" }
+              "primary": {
+                "type": "string",
+                "default": "#16A34A"
+              },
+              "surface": {
+                "type": "string",
+                "default": "#FFFFFF"
+              },
+              "ink": {
+                "type": "string",
+                "default": "#0A0A0A"
+              }
             }
           },
           "modules": {
             "type": "object",
-            "required": ["lims", "emr", "hospital_management", "pharmacy", "billing", "ai_analytics"],
+            "required": [
+              "lims",
+              "emr",
+              "hospital_management",
+              "pharmacy",
+              "billing",
+              "ai_analytics"
+            ],
             "properties": {
-              "lims": { "type": "boolean", "default": true, "description": "Primary TekiLab LIMS Core (always enabled)." },
-              "emr": { "type": "boolean", "default": false, "description": "Electronic Medical Records & Doctor Consultations." },
-              "hospital_management": { "type": "boolean", "default": false, "description": "Radiology, Inpatient Wards, Hospital Queue & Appointments." },
-              "pharmacy": { "type": "boolean", "default": false, "description": "Pharmacy POS, Multi-Batch Drug Inventory & Lab Prescription Handoff Queue." },
-              "billing": { "type": "boolean", "default": false, "description": "Hospital HMO Claims & Unified Charge Capture." },
-              "ai_analytics": { "type": "boolean", "default": true, "description": "AI Anomaly Detection, Conversational Assistant & Predictive Maintenance." }
+              "lims": {
+                "type": "boolean",
+                "default": true,
+                "description": "Primary TekiLab LIMS Core (always enabled)."
+              },
+              "emr": {
+                "type": "boolean",
+                "default": false,
+                "description": "Electronic Medical Records & Doctor Consultations."
+              },
+              "hospital_management": {
+                "type": "boolean",
+                "default": false,
+                "description": "Radiology, Inpatient Wards, Hospital Queue & Appointments."
+              },
+              "pharmacy": {
+                "type": "boolean",
+                "default": false,
+                "description": "Pharmacy POS, Multi-Batch Drug Inventory & Lab Prescription Handoff Queue."
+              },
+              "billing": {
+                "type": "boolean",
+                "default": false,
+                "description": "Hospital HMO Claims & Unified Charge Capture."
+              },
+              "ai_analytics": {
+                "type": "boolean",
+                "default": true,
+                "description": "AI Anomaly Detection, Conversational Assistant & Predictive Maintenance."
+              }
             }
           },
           "sla_config": {
             "type": "object",
             "properties": {
-              "rapid_turnaround_target_minutes": { "type": "integer", "default": 5 },
-              "max_sla_minutes": { "type": "integer", "default": 10 },
-              "auto_ai_anomaly_check": { "type": "boolean", "default": true },
-              "require_pathologist_signoff_on_critical": { "type": "boolean", "default": true }
+              "rapid_turnaround_target_minutes": {
+                "type": "integer",
+                "default": 5
+              },
+              "max_sla_minutes": {
+                "type": "integer",
+                "default": 10
+              },
+              "auto_ai_anomaly_check": {
+                "type": "boolean",
+                "default": true
+              },
+              "require_pathologist_signoff_on_critical": {
+                "type": "boolean",
+                "default": true
+              }
             }
           },
           "whatsapp_dispatch": {
             "type": "object",
             "properties": {
-              "enabled": { "type": "boolean", "default": true },
-              "sender_name": { "type": "string", "default": "TekiLab Diagnostics" },
-              "include_qr_verification": { "type": "boolean", "default": true },
-              "auto_attach_pdf": { "type": "boolean", "default": true }
+              "enabled": {
+                "type": "boolean",
+                "default": true
+              },
+              "sender_name": {
+                "type": "string",
+                "default": "TekiLab Diagnostics"
+              },
+              "include_qr_verification": {
+                "type": "boolean",
+                "default": true
+              },
+              "auto_attach_pdf": {
+                "type": "boolean",
+                "default": true
+              }
             }
           },
           "instrument_hub": {
             "type": "object",
             "properties": {
-              "webhook_enabled": { "type": "boolean", "default": true },
+              "webhook_enabled": {
+                "type": "boolean",
+                "default": true
+              },
               "allowed_instruments": {
                 "type": "array",
-                "items": { "type": "string" }
+                "items": {
+                  "type": "string"
+                }
               }
             }
           },
-          "updated_by": { "type": "string" },
-          "updated_at": { "type": "string", "format": "date-time" }
+          "updated_by": {
+            "type": "string"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "sampleDocument": {
@@ -105,7 +205,11 @@
         },
         "instrument_hub": {
           "webhook_enabled": true,
-          "allowed_instruments": ["SYS-XN550-01", "ROCHE-C311-02", "MINDRAY-BC5000"]
+          "allowed_instruments": [
+            "SYS-XN550-01",
+            "ROCHE-C311-02",
+            "MINDRAY-BC5000"
+          ]
         },
         "updated_by": "admin@tekilab.io",
         "updated_at": "2026-11-23T06:00:00.000Z"
@@ -114,119 +218,694 @@
     "lab_results": {
       "description": "Rapid-response laboratory sample lifecycle, structured analyte readings, Gemini AI anomaly validation, AI-suggested therapeutic intervention, WhatsApp PDF dispatch telemetry, and Pharmacy handoff audit.",
       "primaryKey": {
-        "partitionKey": ["tenant_id"],
-        "clusteringKey": ["created_at", "id"]
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "created_at",
+          "id"
+        ]
       },
-      "indexes": ["accession_number", "sample_barcode", "patient_id", "status", "anomaly_severity"],
+      "indexes": [
+        "accession_number",
+        "sample_barcode",
+        "patient_id",
+        "status",
+        "anomaly_severity"
+      ],
       "jsonSchema": {
         "type": "object",
-        "required": ["id", "tenant_id", "accession_number", "patient_id", "patient_name", "test_name", "status", "parameters"],
+        "required": [
+          "id",
+          "tenant_id",
+          "accession_number",
+          "patient_id",
+          "patient_name",
+          "test_name",
+          "status",
+          "parameters"
+        ],
         "properties": {
-          "id": { "type": "string" },
-          "tenant_id": { "type": "string" },
-          "accession_number": { "type": "string" },
-          "sample_barcode": { "type": "string" },
-          "patient_id": { "type": "string" },
-          "patient_name": { "type": "string" },
-          "patient_mrn": { "type": "string" },
-          "patient_phone": { "type": "string" },
-          "test_code": { "type": "string" },
-          "test_name": { "type": "string" },
-          "category": { "type": "string" },
-          "sample_type": { "type": "string" },
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "accession_number": {
+            "type": "string"
+          },
+          "sample_barcode": {
+            "type": "string"
+          },
+          "patient_id": {
+            "type": "string"
+          },
+          "patient_name": {
+            "type": "string"
+          },
+          "patient_mrn": {
+            "type": "string"
+          },
+          "patient_phone": {
+            "type": "string"
+          },
+          "test_code": {
+            "type": "string"
+          },
+          "test_name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "sample_type": {
+            "type": "string"
+          },
           "intake_source": {
             "type": "string",
-            "enum": ["manual_entry", "barcode_scan", "instrument_webhook"]
+            "enum": [
+              "manual_entry",
+              "barcode_scan",
+              "instrument_webhook"
+            ]
           },
-          "instrument_id": { "type": "string" },
+          "instrument_id": {
+            "type": "string"
+          },
           "status": {
             "type": "string",
-            "enum": ["COLLECTED", "ANALYZING", "AI_CHECKED", "VALIDATED", "DISPATCHED"]
+            "enum": [
+              "COLLECTED",
+              "ANALYZING",
+              "AI_CHECKED",
+              "VALIDATED",
+              "DISPATCHED"
+            ]
           },
           "parameters": {
             "type": "array",
             "items": {
               "type": "object",
-              "required": ["name", "value", "referenceRange", "flag"],
+              "required": [
+                "name",
+                "value",
+                "referenceRange",
+                "flag"
+              ],
               "properties": {
-                "name": { "type": "string" },
-                "value": { "type": "string" },
-                "unit": { "type": "string" },
-                "referenceRange": { "type": "string" },
-                "flag": { "type": "string", "enum": ["Normal", "High", "Low", "Critical", "Positive", "Negative"] }
+                "name": {
+                  "type": "string"
+                },
+                "value": {
+                  "type": "string"
+                },
+                "unit": {
+                  "type": "string"
+                },
+                "referenceRange": {
+                  "type": "string"
+                },
+                "flag": {
+                  "type": "string",
+                  "enum": [
+                    "Normal",
+                    "High",
+                    "Low",
+                    "Critical",
+                    "Positive",
+                    "Negative"
+                  ]
+                }
               }
             }
           },
           "ai_anomaly_report": {
             "type": "object",
             "properties": {
-              "anomalyDetected": { "type": "boolean" },
-              "severity": { "type": "string", "enum": ["normal", "attention", "critical"] },
-              "likelyDiagnosis": { "type": "string" },
-              "clinicalSummary": { "type": "string" },
+              "anomalyDetected": {
+                "type": "boolean"
+              },
+              "severity": {
+                "type": "string",
+                "enum": [
+                  "normal",
+                  "attention",
+                  "critical"
+                ]
+              },
+              "likelyDiagnosis": {
+                "type": "string"
+              },
+              "clinicalSummary": {
+                "type": "string"
+              },
               "flaggedParameters": {
                 "type": "array",
                 "items": {
                   "type": "object",
                   "properties": {
-                    "parameter": { "type": "string" },
-                    "value": { "type": "string" },
-                    "referenceRange": { "type": "string" },
-                    "deviation": { "type": "string" },
-                    "clinicalNote": { "type": "string" }
+                    "parameter": {
+                      "type": "string"
+                    },
+                    "value": {
+                      "type": "string"
+                    },
+                    "referenceRange": {
+                      "type": "string"
+                    },
+                    "deviation": {
+                      "type": "string"
+                    },
+                    "clinicalNote": {
+                      "type": "string"
+                    }
                   }
                 }
               },
-              "checkedAt": { "type": "string", "format": "date-time" },
-              "model": { "type": "string" }
+              "checkedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "model": {
+                "type": "string"
+              }
             }
           },
           "ai_suggested_drug": {
             "type": "object",
             "properties": {
-              "drugName": { "type": "string" },
-              "genericName": { "type": "string" },
-              "dosage": { "type": "string" },
-              "frequency": { "type": "string" },
-              "durationDays": { "type": "integer" },
-              "quantity": { "type": "integer" },
-              "rationale": { "type": "string" },
-              "contraindicationCheck": { "type": "string" }
+              "drugName": {
+                "type": "string"
+              },
+              "genericName": {
+                "type": "string"
+              },
+              "dosage": {
+                "type": "string"
+              },
+              "frequency": {
+                "type": "string"
+              },
+              "durationDays": {
+                "type": "integer"
+              },
+              "quantity": {
+                "type": "integer"
+              },
+              "rationale": {
+                "type": "string"
+              },
+              "contraindicationCheck": {
+                "type": "string"
+              }
             }
           },
           "whatsapp_dispatch": {
             "type": "object",
             "properties": {
-              "dispatched": { "type": "boolean" },
-              "recipientPhone": { "type": "string" },
-              "pdfReportNumber": { "type": "string" },
-              "dispatchedAt": { "type": "string", "format": "date-time" },
-              "turnaroundSeconds": { "type": "integer" },
-              "slaMet": { "type": "boolean" }
+              "dispatched": {
+                "type": "boolean"
+              },
+              "recipientPhone": {
+                "type": "string"
+              },
+              "pdfReportNumber": {
+                "type": "string"
+              },
+              "dispatchedAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "turnaroundSeconds": {
+                "type": "integer"
+              },
+              "slaMet": {
+                "type": "boolean"
+              }
             }
           },
           "pharmacy_handoff": {
             "type": "object",
             "properties": {
-              "handedOff": { "type": "boolean" },
-              "handoffId": { "type": "string" },
-              "handedOffAt": { "type": "string", "format": "date-time" },
-              "pharmacyStatus": { "type": "string", "enum": ["QUEUED", "LOADED_IN_POS", "DISPENSED"] }
+              "handedOff": {
+                "type": "boolean"
+              },
+              "handoffId": {
+                "type": "string"
+              },
+              "handedOffAt": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "pharmacyStatus": {
+                "type": "string",
+                "enum": [
+                  "QUEUED",
+                  "LOADED_IN_POS",
+                  "DISPENSED"
+                ]
+              }
             }
           },
-          "validated_by": { "type": "string" },
-          "validated_at": { "type": "string", "format": "date-time" },
-          "created_at": { "type": "string", "format": "date-time" }
+          "validated_by": {
+            "type": "string"
+          },
+          "validated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       }
     },
     "pharmacy_handoff_queue": {
       "description": "Cross-module clinical prescription queue populated when a validated TekiLab result triggers 'Prescribe Action' and the Pharmacy module is enabled.",
       "primaryKey": {
-        "partitionKey": ["tenant_id"],
-        "clusteringKey": ["created_at", "handoff_id"]
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "created_at",
+          "handoff_id"
+        ]
       },
-      "indexes": ["patient_id", "accession_number", "status"]
+      "indexes": [
+        "patient_id",
+        "accession_number",
+        "status"
+      ]
+    },
+    "staff_members": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string"
+          },
+          "role": {
+            "type": "string"
+          },
+          "department": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "facility_branches": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "address": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "test_catalogue": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "department": {
+            "type": "string"
+          },
+          "workflow": {
+            "type": "string"
+          },
+          "modality": {
+            "type": "string"
+          },
+          "body_site": {
+            "type": "string"
+          },
+          "price_naira": {
+            "type": "number"
+          },
+          "price_status": {
+            "type": "string"
+          },
+          "parameters": {
+            "type": "array"
+          },
+          "revision": {
+            "type": "number"
+          }
+        }
+      }
+    },
+    "diagnostic_orders": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "patient_id": {
+            "type": "string"
+          },
+          "test_id": {
+            "type": "string"
+          },
+          "department": {
+            "type": "string"
+          },
+          "catalogue_snapshot": {
+            "type": "object"
+          },
+          "order_status": {
+            "type": "string"
+          },
+          "billing_status": {
+            "type": "string"
+          },
+          "report_approval": {
+            "type": "object"
+          }
+        }
+      }
+    },
+    "online_bookings": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "token_hash": {
+            "type": "string"
+          },
+          "tests": {
+            "type": "array"
+          },
+          "total_naira": {
+            "type": "number"
+          },
+          "status": {
+            "type": "string"
+          },
+          "payment_status": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "payment_transactions": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "booking_id": {
+            "type": "string"
+          },
+          "provider": {
+            "type": "string"
+          },
+          "reference": {
+            "type": "string"
+          },
+          "amount_minor": {
+            "type": "number"
+          },
+          "currency": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "verified_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "approved_reports": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "order_id": {
+            "type": "string"
+          },
+          "token_hash": {
+            "type": "string"
+          },
+          "content_digest": {
+            "type": "string"
+          },
+          "approved_snapshot": {
+            "type": "object"
+          },
+          "revoked_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "audit_events": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "actor_id": {
+            "type": "string"
+          },
+          "entity_id": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "sync_outbox": {
+      "description": "Production mapping for the local preview workflow. Apply only after approved migration.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id"
+        ],
+        "clusteringKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "entity": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "state": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string"
+          }
+        }
+      }
     }
-  }
+  },
+  "roleCatalogueSource": "src/config/roles.ts",
+  "paymentProvider": "flutterwave",
+  "migrationStatus": "held_pending_local_review"
 }

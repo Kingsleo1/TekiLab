@@ -954,7 +954,7 @@ function AppShell() {
     }
     // Reports and analytics
     if (v === 'admin_reports' || v === 'sales') {
-      return permissions.includes('canViewReports') || permissions.includes('canAccessExpenses');
+      return permissions.includes('canViewBranchAnalytics') || permissions.includes('canManageBilling');
     }
     // Suppliers & Supply
     if (v === 'new_supply' || v === 'supply_records' || v === 'new_supplier' || v === 'list_of_suppliers') {
@@ -974,11 +974,11 @@ function AppShell() {
     }
     // Staff & Personnel Administration (Store Manager and Admin)
     if (v === 'staff' || v === 'admin_users') {
-      return permissions.includes('canManageStaff');
+      return permissions.includes('canManageBranchStaff');
     }
     // Branch Management
     if (v === 'admin_merchants') {
-      return permissions.includes('canManageBranches');
+      return permissions.includes('canManageAllBranches');
     }
     // Marketing Console
     if (v === 'admin_marketing') {
@@ -1041,27 +1041,25 @@ function AppShell() {
   const activeCollapsedIcon = hasCustomCompanyLogo ? activeTenant!.logo! : '/favicon.png?v=5';
 
   return (
-    <div className="h-dvh w-full max-w-full overflow-hidden bg-slate-50 flex font-sans selection:bg-blue-100 selection:text-blue-900">
+    <div className="fixed inset-0 h-dvh w-full max-w-full overflow-hidden bg-slate-50 flex font-sans selection:bg-blue-100 selection:text-blue-900">
       <Toaster position="top-right" richColors />
       
       {/* Sidebar Navigation */}
       <AnimatePresence>
         {true && (
-          <motion.aside 
-            initial={{ x: -300 }}
-            animate={{ x: 0, width: isSidebarOpen ? 248 : 72 }}
-            className="bg-[#0F172A] hidden md:flex flex-col z-50 sticky top-0 h-dvh transition-all shadow-sm border-r border-slate-800 shrink-0"
+          <aside style={{width:isSidebarOpen?248:72}}
+            className="bg-[#0F172A] hidden md:flex flex-col z-50 relative h-dvh transition-[width] shadow-sm border-r border-slate-800 shrink-0"
           >
             <div className="p-3 shrink-0 border-b border-slate-800/80">
               {isSidebarOpen ? (
                 <div 
                   onClick={() => setView(role === 'admin' ? 'saas_control' : 'overview')}
                   className="w-full h-18 rounded-2xl bg-white px-3 py-1.5 flex items-center justify-center shadow-lg cursor-pointer hover:opacity-95 transition-opacity overflow-hidden"
-                  title={activeTenant ? `${activeTenant.companyName} (${formatCompanyFirstShortUrl(activeTenant.slug, activeTenant.customDomain)})` : 'Teki Pharm'}
+                  title={activeTenant ? `${activeTenant.companyName} (${formatCompanyFirstShortUrl(activeTenant.slug, activeTenant.customDomain)})` : 'TekiLab'}
                 >
                   <img 
                     src={activeDashboardLogo} 
-                    alt={activeTenant?.companyName || 'Teki Pharm Logo'} 
+                    alt={activeTenant?.companyName || 'TekiLab Logo'}
                     className="w-full h-full object-contain scale-105"
                   />
                 </div>
@@ -1072,7 +1070,7 @@ function AppShell() {
                 >
                   <img 
                     src={activeCollapsedIcon} 
-                    alt={activeTenant?.companyName || 'Teki Pharm'} 
+                    alt={activeTenant?.companyName || 'TekiLab'}
                     className="h-full w-full object-contain"
                   />
                 </div>
@@ -1167,7 +1165,7 @@ function AppShell() {
                 </Button>
               )}
             </div>
-          </motion.aside>
+          </aside>
         )}
       </AnimatePresence>
 
@@ -1198,7 +1196,7 @@ function AppShell() {
                         <div className="w-full h-16 rounded-2xl bg-white px-3 py-1.5 flex items-center justify-center shadow-lg overflow-hidden">
                           <img 
                             src={activeDashboardLogo} 
-                            alt={activeTenant?.companyName || 'Teki Pharm Logo'} 
+                            alt={activeTenant?.companyName || 'TekiLab Logo'}
                             className="w-full h-full object-contain scale-105"
                           />
                         </div>
@@ -1432,7 +1430,7 @@ function AppShell() {
                   ) : (
                     <>
                       {view === 'overview' && (<>
-                        <WorkflowDashboard labs={labOrders} imaging={imagingOrders} tickets={queueTickets} charges={charges} user={currentUser} onNavigate={v => setView(v as DashView)} />
+                        <WorkflowDashboard patients={patients} encounters={encounters} branches={branches} staff={JSON.parse(localStorage.getItem('ph_staff_list')||'[]')} labs={labOrders} imaging={imagingOrders} tickets={queueTickets} charges={charges} user={currentUser} onNavigate={v => setView(v as DashView)} />
 
                       </>)}
                       {view === 'financials' && <FinancialOverview canManageBilling={getRoleDefinition(currentUser?.role).permissions.includes('canManageBilling')||currentUser?.permissions?.includes('canManageBilling')} charges={charges} onNavigate={v=>setView(v as DashView)}/>}

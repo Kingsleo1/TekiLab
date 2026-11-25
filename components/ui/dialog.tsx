@@ -74,6 +74,7 @@ function DialogContent({
           className
         )}
         {...props}
+        style={{...props.style,maxHeight:'calc(100dvh - 2rem)',overflowY:'auto',display:'block'}}
       >
         {children}
         {showCloseButton && (

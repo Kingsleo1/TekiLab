@@ -1,4 +1,4 @@
-import {BookingPayments} from './booking-payments';
+import {FlutterwaveBookingPayments} from './flutterwave-payments';
 import {Router} from 'express';
 import path from 'node:path';
 import {QRRegistry} from './qr-registry';
@@ -8,7 +8,7 @@ import type {CatalogueActor,CatalogueScope} from '../types/test-catalog';
 export function createQRRouter(root:string,previewMode:boolean,catalogue:TestCatalogueStore){
  const router=Router(),registry=new QRRegistry(path.join(root,'data/local-preview/qr-registry.json'),catalogue);
  const publicScope={tenantId:process.env.TEKILAB_BOOKING_TENANT_ID||'tenant-tekilab-01',branchId:process.env.TEKILAB_BOOKING_BRANCH_ID||'pharma-1'};
- const payments=new BookingPayments(process.env.PAYSTACK_SECRET_KEY,previewMode);
+ const payments=new FlutterwaveBookingPayments(process.env.FLW_SECRET_KEY,previewMode);
  const configuredOrigin=process.env.PUBLIC_SITE_URL;
  const siteOrigin=configuredOrigin?new URL(configuredOrigin).origin:'http://localhost:3000';
  if(configuredOrigin&&!siteOrigin.startsWith('https://')&&!/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(siteOrigin))throw Error('PUBLIC_SITE_URL requires HTTPS.');

@@ -54,7 +54,7 @@ export function ClinicalPublicPages(){
  const [record,setRecord]=useState<any>(null),[error,setError]=useState(''),[downloadError,setDownloadError]=useState('');
  useEffect(()=>{
   const meta=document.createElement('meta');meta.name='referrer';meta.content='no-referrer';document.head.appendChild(meta);
-  const reference=new URLSearchParams(window.location.search).get('reference')||new URLSearchParams(window.location.search).get('trxref');
+  const reference=new URLSearchParams(window.location.search).get('tx_ref')||new URLSearchParams(window.location.search).get('reference')||new URLSearchParams(window.location.search).get('trxref');
   if(token&&!isResult&&reference)qrRequest('/booking/'+encodeURIComponent(token)+'/payment/verify',{reference}).then(()=>qrRequest('/booking/'+encodeURIComponent(token))).then(setRecord).catch(error=>setError(error.message));
   else if(token)qrRequest((isResult?'/results/':'/booking/')+encodeURIComponent(token)).then(setRecord).catch(error=>setError(error.message));
   return()=>{meta.remove();};

@@ -1,3 +1,4 @@
+import {getRoleDefinition} from '../config/roles';
 import { 
   Product, 
   Order, 
@@ -3960,55 +3961,7 @@ class PharmaDataStore {
       await this.ensurePharmacyExists(staff.branchId);
     }
 
-    if (!staff.permissions || staff.permissions.length === 0) {
-      if (staff.role === 'Store Manager') {
-        staff.permissions = [
-          'canAccessPOS', 
-          'canManageStaff', 
-          'canManageCustomers', 
-          'canManageInventory', 
-          'canAccessSuppliers', 
-          'canAccessExpenses', 
-          'canAccessTransfers', 
-          'canAccessWarehouse', 
-          'canViewReports', 
-          'canAdjustSettings', 
-          'canApplyDiscounts', 
-          'canDispenseControlled'
-        ];
-      } else if (staff.role === 'Kernel Admin') {
-        staff.permissions = [
-          'canAccessPOS', 
-          'canManageStaff', 
-          'canManageCustomers', 
-          'canManageInventory', 
-          'canAccessSuppliers', 
-          'canAccessExpenses', 
-          'canAccessTransfers', 
-          'canAccessWarehouse', 
-          'canViewReports', 
-          'canManageBranches', 
-          'canManageMarketing', 
-          'canManageIntegrations', 
-          'canAdjustSettings', 
-          'canApplyDiscounts', 
-          'canDispenseControlled'
-        ];
-      } else if (staff.role === 'Terminal Manager') {
-        staff.permissions = [
-          'canAccessPOS', 
-          'canManageCustomers', 
-          'canManageInventory', 
-          'canAccessTransfers', 
-          'canAccessSuppliers', 
-          'canApplyDiscounts', 
-          'canDispenseControlled'
-        ];
-      } else {
-        staff.permissions = ['canAccessPOS'];
-      }
-    }
-
+    if(staff.permissions===undefined)staff.permissions=[...getRoleDefinition(staff.role).permissions];
     const existingIdx = this.staffList.findIndex(
       s => s.id === staff.id || (s.email && s.email.toLowerCase() === staff.email.toLowerCase())
     );

@@ -20,6 +20,15 @@ Branch: chatgpt/tekilab-ui-workflow
 - Rich findings, optional browser-native dictation, advisory review downloads and reusable session signatures remain. Each report requires explicit human approval; content changes invalidate the approval.
 - The header database/CQL control is removed. App installation is offered in the footer.
 
+## Latest preview update
+
+- Staff directory views now share the same laboratory role and permissions catalogue, with editable staff names and no fallback pharmacy POS grants.
+- Overview adds patient, consultation, team and facility counts plus links to staff, branches, appointments, inpatient, reports and module settings. Colourful service cards retain financial charts.
+- Staff and branch dialogs scroll to their Save actions at 390 x 600. The application sidebar remains visible while navigating.
+- Shared online/walk-in order summaries list each selected test with a Remove action.
+- Dictation handles final and interim events, inserts recognized text, avoids repeated final transcripts, and explains microphone/network errors. This is browser speech support, independent of a paid AI API; physical microphone transcription remains unverified.
+- The schema manifest now includes staff, facilities, catalogue, orders, bookings, payments, published reports, audit and sync-outbox mappings. It is a proposed mapping, not an executed Astra migration.
+
 ## Persistence and checkout
 
 Catalogue changes, audit events, catalogue orders, booking/check-in records, payments and published verification records use atomic local files under ignored data/local-preview/. They survive server restart. Their records retain tenant/branch scope and an outbox for future Astra integration. The outbox is preparation only; no Astra delivery worker is running.
@@ -28,34 +37,42 @@ Other existing clinical/pharmacy records still include browser-local or in-memor
 
 Catalogue polling uses revision checks and conditional responses; the picker initially renders 40 matches. Dashboard pages load on demand. A large production JavaScript chunk warning remains.
 
-Paystack initialization and verification are implemented on the server with server-calculated amounts and reference, currency, amount, booking and test-domain validation. Unknown or reference-only fees cannot be charged online. Preview accepts test keys only. No provider key was configured, no live payment was taken, and actual provider checkout was not exercised. Confirm starter facility fees before operational use. Cash/payment recording is supported in the billing workflow.
+Flutterwave initialization and verification are implemented on the server with server-calculated amounts and reference, currency, amount, booking and hosted checkout-domain validation. Unknown or reference-only fees cannot be charged online. Preview accepts test keys only. No provider key was configured, no live payment was taken, and actual provider checkout was not exercised. Confirm starter facility fees before operational use. Cash/payment recording is supported in the billing workflow.
 
 Public booking currently uses the server-configured facility scope. Multi-tenant public routing requires the trusted production backend.
 
-## Verified results
+## Verified results for this update
 
-All eight commands passed:
-
-| Command | Result |
+| Check | Result |
 | --- | --- |
-| npm run lint | TypeScript passed |
-| npm test | 40 tests passed |
-| npm run build | Vite build passed |
-| npm run test:api | 15 checks passed |
-| npm run test:browser | 19 checks passed |
-| npm run test:integration | 16 checks passed |
-| npm run test:qr | 25 checks passed |
-| npm run test:management | 20 checks passed |
+| TypeScript (npm run lint) | Passed |
+| Vite build (--configLoader native) | Passed; large-chunk warning remains |
+| Native TypeScript unit runner | 43 passed |
+| API browser suite | 15 passed |
+| Department integration browser suite | 16 passed |
+| Dictation-event and department browser suite | 19 passed |
+| QR booking/result browser suite | 25 passed |
+| Management/imaging browser suite | 20 passed |
+| Staff editor browser suite | 4 passed |
+| Branch dialog browser suite | 1 passed |
 
-Total: 135 automated checks, using synthetic records and fresh headless Edge contexts. External browser requests were blocked. Tests cover approval invalidation, signature reuse, multiple orders, departmental handoffs, pharmacy checkout, billing, catalogue roles/audit, stale edits, request replay, branch separation, booking check-in, report withdrawal and management navigation.
+The suites overlap; these counts are not unique end-user workflows. Browser suites use synthetic records, fresh headless Edge contexts and blocked external browser requests. Dictation uses simulated browser speech events; Flutterwave unit tests mock provider responses. No live payment or physical microphone result is claimed.
 
-Booking, laboratory and radiology PDFs were rendered and their QR codes actually decoded and checked against working local routes. Booking and radiology page renders were also visually inspected. Print actions invoked the browser print flow; physical printer output was not tested.
+The previous rapid-browser suite was not rerun on this static build: it imports a source module that the static server does not serve. The current unit, department, dictation, QR and management suites provide the listed coverage. Previous QR PDF render/decode inspection remains prior evidence, rather than a new physical scanner test.
 
-Mobile checks cover rapid review, public verification and management charts at 390px width. No uncaught browser errors were reported by the passing suites.
+On this Windows host, tsx fails before execution in os.userInfo and the default Vite config bundler encounters filesystem access restrictions. Validation used a native TypeScript transpilation hook and Vite's native config loader, without modifying installed dependencies. See scripts/native-ts-loader.mjs. The built preview runs with NODE_ENV=production and TEKILAB_PREVIEW_MODE=true; production static serving does not mean production authorization/storage is enabled.
 
-Dependency audit: zero runtime advisories; seven moderate development-tool advisories remain. No high or critical advisories were reported by the full audit.
+Reproduce the alternate unit command with:
 
-Evidence is local and ignored under work/: final-validation-v2.json, final-*.txt, qr-results/, browser-results/ and management-results/. Synthetic preview records may remain for review. The user's regular browser profile was not cleared or used for automated tests.
+    node --import ./scripts/native-ts-loader.mjs --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts
+
+Build with npm run build -- --configLoader native. To run the built local preview in PowerShell:
+
+    $env:NODE_ENV='production'
+    $env:TEKILAB_PREVIEW_MODE='true'
+    node --import ./scripts/native-ts-loader.mjs server.ts
+
+Evidence is local and ignored under work/: demo-unit-final.txt, demo-lint-final.txt, native-build-final.txt, demo-management-final.txt and the per-suite logs. Synthetic preview records may remain. Automated tests do not clear or use the user's regular browser profile. The earlier dependency audit is not a fresh audit for this update.
 
 ## Remaining release work and explicit holds
 

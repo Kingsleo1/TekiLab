@@ -23,6 +23,7 @@ async function decodePDF(file){
 }
 const browser=await chromium.launch({channel:'msedge',headless:true}),context=await browser.newContext({viewport:{width:1280,height:1000},acceptDownloads:true});
 await context.route('**/*',r=>['localhost','127.0.0.1'].includes(new URL(r.request().url()).hostname)?r.continue():r.abort());
+await context.route('**/api/lims/test-catalog/orders?**',async route=>{if(route.request().method()!=='GET')return route.continue();const response=await route.fetch();const data=await response.json();for(const key of ['orders','charges','queueTickets'])data[key]=(data[key]||[]).filter(record=>String(record.patientName||'').startsWith('Synthetic'));return route.fulfill({response,json:data});});
 const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(25000);
 const config=await (await fetch(base+'/api/lims/qr/booking-config')).json();
 const actor={id:'SYNTH-QR-REVIEWER',name:'Synthetic QR Reviewer',email:'qr@example.invalid',role:'Kernel Admin',branchId:config.scope.branchId,tenantId:config.scope.tenantId,permissions:[]};
