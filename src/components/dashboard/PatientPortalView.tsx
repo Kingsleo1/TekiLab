@@ -1,3 +1,4 @@
+import { OnlineBooking } from '../ClinicalPublicPages';
 import React, { useState, useMemo } from 'react';
 import {
   LayoutDashboard,
@@ -628,119 +629,7 @@ export function PatientPortalView({
       {/* =================================================================== */}
       {/* TAB 3: BOOK LAB SERVICES ONLINE & PAY                               */}
       {/* =================================================================== */}
-      {activeTab === 'book' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          <div className="lg:col-span-7 bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 shadow-xs">
-            <h2 className="text-lg font-bold text-neutral-950">Select Laboratory Tests</h2>
-            <div className="border border-neutral-200 rounded-xl divide-y divide-neutral-100">
-              {BOOKABLE_LAB_SERVICES.map((srv) => {
-                const checked = selectedServiceIds.includes(srv.id);
-                return (
-                  <button
-                    key={srv.id}
-                    type="button"
-                    onClick={() => toggleService(srv.id)}
-                    className={`w-full px-4 py-3.5 flex items-center justify-between text-left cursor-pointer transition-colors ${
-                      checked ? 'bg-blue-50/60' : 'bg-white hover:bg-neutral-50'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`w-5 h-5 rounded-md flex items-center justify-center ${
-                          checked ? 'bg-blue-600 text-white' : 'border border-neutral-300'
-                        }`}
-                      >
-                        {checked && <Check className="w-3.5 h-3.5" />}
-                      </div>
-                      <span className="text-sm font-semibold text-neutral-950">{srv.name}</span>
-                    </div>
-                    <span className="text-xs font-mono font-bold text-neutral-700">
-                      ₦{srv.priceNaira.toLocaleString()}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="lg:col-span-5 bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xs">
-            <div className="space-y-4">
-              <h2 className="text-lg font-bold text-neutral-950">Appointment &amp; Online Payment</h2>
-              <div>
-                <label className="block text-xs font-semibold text-neutral-700 mb-1.5">TekiLab Branch</label>
-                <select
-                  value={selectedBranch}
-                  onChange={(e) => setSelectedBranch(e.target.value)}
-                  className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-xs font-semibold bg-white"
-                >
-                  {BRANCH_OPTIONS.map((b) => (
-                    <option key={b} value={b}>{b}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Date</label>
-                  <Input type="date" value={appointmentDate} onChange={(e) => setAppointmentDate(e.target.value)} className="h-10 rounded-xl" />
-                </div>
-                <div>
-                  <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Time Slot</label>
-                  <select
-                    value={appointmentTime}
-                    onChange={(e) => setAppointmentTime(e.target.value)}
-                    className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-xs font-semibold bg-white"
-                  >
-                    {['08:30 AM', '10:00 AM', '11:30 AM', '01:00 PM', '03:00 PM', '04:30 PM'].map((t) => (
-                      <option key={t} value={t}>{t}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {availableCreditNaira > 0 && (
-                <label className="flex items-center justify-between p-3 rounded-xl bg-blue-50/60 border border-blue-200 cursor-pointer">
-                  <div className="text-xs">
-                    <div className="font-bold text-blue-800">Apply Referral Credit</div>
-                    <div className="text-blue-600">Available: ₦{availableCreditNaira.toLocaleString()}</div>
-                  </div>
-                  <input
-                    type="checkbox"
-                    checked={applyReferralCredit}
-                    onChange={(e) => setApplyReferralCredit(e.target.checked)}
-                    className="w-4 h-4 accent-blue-600"
-                  />
-                </label>
-              )}
-
-              <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-200 space-y-1">
-                {appliedDiscount > 0 && (
-                  <div className="flex items-center justify-between text-xs text-blue-600">
-                    <span>Referral Discount</span>
-                    <span>-₦{appliedDiscount.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-semibold text-neutral-600">
-                    Total ({selectedServices.length} test{selectedServices.length === 1 ? '' : 's'})
-                  </span>
-                  <span className="text-xl font-mono font-extrabold text-neutral-950">
-                    ₦{totalNaira.toLocaleString()}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <Button
-              disabled={selectedServices.length === 0}
-              onClick={() => setIsCheckoutOpen(true)}
-              className="w-full h-11 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-            >
-              <CreditCard className="w-4 h-4 mr-2" />
-              Pay Online &amp; Book Appointment
-            </Button>
-          </div>
-        </div>
-      )}
+      {activeTab === 'book' && <OnlineBooking initialPatient={profile}/>}
 
       {/* =================================================================== */}
       {/* TAB 4: LAB INTERACTION HISTORY                                      */}

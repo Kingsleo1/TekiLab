@@ -1,3 +1,5 @@
+import { ensureResultVerification } from '../../services/qr';
+import { ReportVerificationControls } from './ReportVerificationControls';
 import React, { useState } from 'react';
 import { FindingsEditor } from './FindingsEditor';
 import { ReportSignature } from './ReportSignature';
@@ -38,6 +40,7 @@ import { getProductionDeployedUrl } from '../../lib/saas-pricing';
 import { toast } from 'sonner';
 
 interface LaboratoryLIMSViewProps {
+  onNavigate?:(view:string)=>void;
   labOrders: LabOrder[];
   labCatalog: LabTestCatalogItem[];
   patients: PatientRecord[];
@@ -73,7 +76,7 @@ export function formatWhatsAppPhone(phone: string = ''): string {
   return cleaned;
 }
 
-export function LaboratoryLIMSView({
+export function LaboratoryLIMSView({onNavigate,
   labOrders,
   labCatalog,
   patients,
@@ -95,7 +98,7 @@ export function LaboratoryLIMSView({
   const [isPreviewPdfOpen, setIsPreviewPdfOpen] = useState(false);
   const [findingsHtml, setFindingsHtml] = useState('');
   const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
-  const reportSnapshot = JSON.stringify({ id: selectedOrder?.id, patientId: selectedOrder?.patientId, resultValues, template: labCatalog.find(c => c.id === selectedOrder?.testId)?.parameters, clinicalInterpretation, findingsHtml, likelyIssue, customIssueText, isCustomIssueMode });
+  const reportSnapshot = JSON.stringify({ id: selectedOrder?.id, patientId: selectedOrder?.patientId, patientName:selectedOrder?.patientName, mrn:selectedOrder?.mrn, testId:selectedOrder?.testId, testName:selectedOrder?.testName, accessionNumber:(selectedOrder as any)?.accessionNumber, resultValues, template: labCatalog.find(c => c.id === selectedOrder?.testId)?.parameters, clinicalInterpretation, findingsHtml, likelyIssue, customIssueText, isCustomIssueMode });
   const critical = Object.values(resultValues).some((v: any) => v.flag === 'Critical');
 
   const filteredOrders = labOrders.filter(order => {
@@ -127,7 +130,7 @@ export function LaboratoryLIMSView({
     setClinicalInterpretation(order.clinicalInterpretation || '');
   };
 
-  const handleCollectSample = (order: LabOrder) => {
+  const handleCollectSample = async(order: LabOrder) => {
     const updated: LabOrder = {
       ...order,
       sampleStatus: 'Sample Collected',
@@ -135,12 +138,12 @@ export function LaboratoryLIMSView({
       sampleCollectorName: currentUser?.displayName || currentUser?.name || '',
       sampleCollectedAt: new Date().toISOString()
     };
-    onUpdateLabOrder(updated);
+    try{await onUpdateLabOrder(updated);}catch(error:any){toast.error(error.message);return;}
     setSelectedPatientOrder(updated);
     toast.success(`Specimen collected for Accession ${order.accessionNumber}`);
   };
 
-  const handleSaveResult = () => {
+  const handleSaveResult = async() => {
     if (!selectedOrder) return;
     if (selectedOrder.orderStatus === 'RELEASED' || selectedOrder.sampleStatus !== 'Sample Collected') {
       toast.error('Collect the sample first. Released reports cannot be overwritten.');
@@ -171,12 +174,12 @@ export function LaboratoryLIMSView({
       enteredAt: new Date().toISOString()
     };
 
-    onUpdateLabOrder(updated);
+    try{await onUpdateLabOrder(updated);}catch(error:any){toast.error(error.message);return;}
     setSelectedPatientOrder(updated);
     toast.success(`Lab result recorded for ${selectedOrder.testName}`);
   };
 
-  const handleValidateAndRelease = () => {
+  const handleValidateAndRelease = async () => {
     if (!selectedOrder) return;
 
     if (selectedOrder.orderStatus === 'RELEASED' || selectedOrder.sampleStatus !== 'Sample Collected') {
@@ -220,10 +223,10 @@ export function LaboratoryLIMSView({
       validatedAt: new Date().toISOString(),
       releasedAt: new Date().toISOString(),
       reportNumber: reportNum,
-      qrCodeUrl: `${getProductionDeployedUrl()}/verify?report=${reportNum}`
+
     };
 
-    onUpdateLabOrder(updated);
+    try{(updated as any).verification=await ensureResultVerification(updated,patients.find(p=>p.id===updated.patientId),'laboratory');await onUpdateLabOrder(updated);}catch(error:any){toast.error(error.message);return;}
     setSelectedPatientOrder(updated);
     toast.success(`Lab result validated & released! Report #: ${reportNum}`);
   };
@@ -256,6 +259,7 @@ export function LaboratoryLIMSView({
 
   return (
     <div className="space-y-6 font-sans">
+      <div className="flex flex-wrap gap-3"><Button variant="outline" onClick={()=>onNavigate?.('radiology')}>Radiology &amp; scan worklist</Button><Button onClick={()=>onNavigate?.('rapid_console')}>Order tests or scans</Button></div>
       <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-4 sm:px-6">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Laboratory</h1>
@@ -543,6 +547,7 @@ export function LaboratoryLIMSView({
                   <FindingsEditor label="Laboratory findings" value={findingsHtml} readOnly={selectedOrder.orderStatus === 'RELEASED'} onChange={(html, text) => { setFindingsHtml(html); setClinicalInterpretation(text); }} />
                 </div>
 
+                <ReportVerificationControls order={selectedOrder} patient={patients.find(p=>p.id===selectedOrder.patientId)} kind="laboratory"/>
                 {selectedOrder.orderStatus !== 'RELEASED' && <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, critical) && selectedOrder.sampleStatus === 'Sample Collected'} onApprove={setReportApproval} />}
                 {/* Scientist Sign-Off Actions */}
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">

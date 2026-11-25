@@ -1,3 +1,5 @@
+import QRCode from 'qrcode';
+import { ensureResultVerification } from '../services/qr';
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { format } from 'date-fns';
@@ -180,9 +182,11 @@ export const generateBrandedPDF = async (
 };
 
 // Clinical PDFs contain only entered measurements and approved findings.
-async function buildDiagnosticPDF(order: any, patient: any, logoUrl: string | undefined, imaging: boolean) {
+async function buildDiagnosticPDF(order: any, patient: any, logoUrl: string | undefined, imaging: boolean, verified?:any) {
   const released = order.orderStatus === (imaging ? 'Released' : 'RELEASED');
   const approved = released && order.reportApproval;
+  const verification=approved?(verified||await ensureResultVerification(order,patient,imaging?"radiology":"laboratory")):null;
+  if(verification?.publishedRecord){order=verification.publishedRecord.order;patient=verification.publishedRecord.patient;}
   const doc = new jsPDF();
   await drawHeaderWithLogo(doc, 'TekiLab Diagnostics', approved ? 'Approved diagnostic report' : 'DRAFT - NOT FOR CLINICAL USE', logoUrl);
   const identity = [
@@ -192,15 +196,15 @@ async function buildDiagnosticPDF(order: any, patient: any, logoUrl: string | un
     ['Report / accession', order.reportNumber || order.accessionNumber || order.id],
     ['Status', approved ? 'Professionally reviewed and approved' : 'DRAFT - approval required']
   ];
-  autoTable(doc, { startY: 32, body: identity, theme: 'plain', styles: { fontSize: 9 }, margin: { bottom: 24 } });
+  autoTable(doc, { startY: 32, body: identity, theme: 'plain', styles: { fontSize: 9 }, margin: { bottom: 48 } });
   if (!imaging) {
     const results = Array.isArray(order.results) ? order.results.map((r: any) => [r.parameterName || r.name, r.value, r.unit || '', r.referenceRange || 'Not recorded', r.flag || 'Not recorded']) :
       Object.entries(order.results || {}).map(([name,r]: [string,any]) => [name, String(r.value ?? ''), r.unit || '', r.referenceRange || 'Not recorded', r.flag || 'Not recorded']);
-    autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, head: [['Parameter','Measured value','Unit','Reference interval','Flag']], body: results, styles: { fontSize: 8 }, margin: { bottom: 24 } });
+    autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, head: [['Parameter','Measured value','Unit','Reference interval','Flag']], body: results, styles: { fontSize: 8 }, margin: { bottom: 48 } });
   }
   const sections = imaging ? [['Clinical indication', order.clinicalIndication], ['Technique',order.techniqueNotes], ['Findings', order.findingsNotes || order.findings], ['Impression',order.impressionNotes || order.impression], ['Recommendations',order.recommendationsNotes]] :
     [['Finding / impression',order.likelyIssue], ['Professional findings and interpretation',order.clinicalInterpretation || order.notes]];
-  autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, body: sections.map(([label,value]) => [label, value || 'Not recorded']), theme: 'grid', styles: { fontSize: 9, overflow: 'linebreak' }, columnStyles: { 0: { cellWidth: 45 } }, margin: { bottom: 24 } });
+  autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, body: sections.map(([label,value]) => [label, value || 'Not recorded']), theme: 'grid', styles: { fontSize: 9, overflow: 'linebreak' }, columnStyles: { 0: { cellWidth: 45 } }, margin: { bottom: 48 } });
   if (approved) {
     let y = (doc as any).lastAutoTable.finalY + 8;
     if (y > 228) { doc.addPage(); y = 25; }
@@ -211,6 +215,8 @@ async function buildDiagnosticPDF(order: any, patient: any, logoUrl: string | un
     doc.text('Content SHA-256: ' + order.reportApproval.reportDigest, 14, y + 34);
   }
   attachFooterWithSign(doc, order.reportNumber || order.accessionNumber || order.id, approved ? order.reportApproval.signerName : 'DRAFT - unsigned');
+  if(verification)await attachVerificationQR(doc,verification.url);
+
   doc.save((approved ? '' : 'DRAFT_') + (imaging ? 'Radiology_' : 'Laboratory_') + (order.reportNumber || order.accessionNumber || order.id) + '.pdf');
 }
 export const generateLabReportPDF = (order: any, patient: any, logoUrl?: string) => buildDiagnosticPDF(order, patient, logoUrl, false);
@@ -226,15 +232,15 @@ export async function generateAIReviewPDF(data: any) {
     ['Generated', data.analysis?.checkedAt || new Date().toISOString()],
     ['Interpretation', data.analysis?.clinicalSummary || 'No AI interpretation requested.'],
     ['Reviewer findings', data.notes || 'Not recorded']
-  ], styles: { fontSize: 9 }, margin: { bottom: 24 } });
+  ], styles: { fontSize: 9 }, margin: { bottom: 48 } });
   autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, head: [['Measurement','Value','Unit','Reference','Recorded flag']],
-    body: data.parameters.map((p: any) => [p.name,p.value,p.unit,p.referenceRange,p.flag]), styles: { fontSize: 8 }, margin: { bottom: 24 } });
+    body: data.parameters.map((p: any) => [p.name,p.value,p.unit,p.referenceRange,p.flag]), styles: { fontSize: 8 }, margin: { bottom: 48 } });
   const deviations = data.analysis?.flaggedParameters || [];
   if (deviations.length) autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6, head: [['Flagged parameter','Deviation','Review note']],
-    body: deviations.map((p: any) => [p.parameter,p.deviation,p.clinicalNote]), styles: { fontSize: 8 }, margin: { bottom: 24 } });
+    body: deviations.map((p: any) => [p.parameter,p.deviation,p.clinicalNote]), styles: { fontSize: 8 }, margin: { bottom: 48 } });
   if (data.analysis?.aiSuggestedDrug) autoTable(doc, { startY: (doc as any).lastAutoTable.finalY + 6,
     body: [['UNAPPROVED AI medication suggestion', JSON.stringify(data.analysis.aiSuggestedDrug)],['Required next step','An authorized clinician must independently assess and prescribe; do not dispense from this worksheet.']],
-    styles: { fontSize: 8 }, margin: { bottom: 24 } });
+    styles: { fontSize: 8 }, margin: { bottom: 48 } });
   attachFooterWithSign(doc, data.accessionNumber, 'Advisory worksheet - unsigned');
   doc.save('Review_' + data.accessionNumber + '.pdf');
 }
@@ -472,3 +478,19 @@ export const generateReceiptPDF = async (order: any, logoUrl?: string) => {
 
   doc.save(`Receipt_${order.id || 'POS'}.pdf`);
 };
+
+async function attachVerificationQR(doc:jsPDF,url:string){
+ const png=await QRCode.toDataURL(url,{errorCorrectionLevel:'M',width:320,margin:4});
+ const pages=doc.getNumberOfPages();for(let i=1;i<=pages;i++){doc.setPage(i);doc.addImage(png,'PNG',172,249,24,24);doc.link(172,249,24,24,{url});doc.setFontSize(7);doc.setTextColor(15,23,42);doc.text('Scan to verify this document',196,277,{align:'right'});}
+}
+export async function downloadVerifiedReport(record:any){
+ record=await (await fetch('/api/lims/qr/results/'+encodeURIComponent(record.token),{cache:'no-store'})).json();if(!record.order)throw Error(record.error||'This report cannot be verified.');
+ return buildDiagnosticPDF(record.order,record.patient,undefined,record.kind==='radiology',{token:record.token,url:window.location.origin+'/verify/'+record.token});
+}
+export async function downloadBookingReceipt(booking:any){
+ const doc=new jsPDF();await drawHeaderWithLogo(doc,'TekiLab','Booking receipt - payment pending');
+ autoTable(doc,{startY:32,body:[['Booking',booking.number],['Patient',booking.patient.fullName],['Date / time',booking.appointmentDate+' '+booking.appointmentTime],['Status','Booking request received - appointment confirmation required'],['Payment','UNPAID - this receipt is not proof of payment']],styles:{fontSize:9},margin:{bottom:48}});
+ autoTable(doc,{startY:(doc as any).lastAutoTable.finalY+6,head:[['Selected test','Listed fee (NGN)']],body:booking.tests.map((test:any)=>[test.name,test.priceNaira===null?'Quote required':test.priceNaira.toLocaleString()]),foot:[['Listed total'+(booking.unquoted?' plus unquoted tests':''),booking.totalNaira.toLocaleString()]],styles:{fontSize:9},margin:{bottom:48}});
+ autoTable(doc,{startY:(doc as any).lastAutoTable.finalY+6,body:[['Reception','Present the QR code to validate your booking and confirm your identity.'],['Fees','Published provider prices are references. Confirm facility fees and test availability.'],['Access',booking.localOnly?'Local preview only. Public access requires the approved deployment.':'Scan the QR on the official site to validate the booking.']],styles:{fontSize:9},margin:{bottom:48}});
+ attachFooterWithSign(doc,booking.number);await attachVerificationQR(doc,booking.receiptUrl);doc.save('Booking_'+booking.number+'.pdf');
+}

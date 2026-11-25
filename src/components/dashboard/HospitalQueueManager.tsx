@@ -1,3 +1,5 @@
+import { BookingScanner } from './BookingScanner';
+import type { CatalogueScope } from '../../types/test-catalog';
 import React, { useState, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
@@ -33,6 +35,7 @@ import { useNotifications } from '../../context/NotificationContext';
 import { toast } from 'sonner';
 
 interface HospitalQueueManagerProps {
+  catalogueScope: CatalogueScope; onBookingCheckedIn:(bundle:any)=>void;
   queueTickets: any[];
   patients: PatientRecord[];
   onIssueTicket: (ticket: any) => void;
@@ -69,6 +72,7 @@ const FLOW_STAGES = [
 ];
 
 export function HospitalQueueManager({
+  catalogueScope, onBookingCheckedIn, currentUser,
   queueTickets,
   patients,
   onIssueTicket,
@@ -163,6 +167,7 @@ export function HospitalQueueManager({
 
   return (
     <div className="w-full max-w-7xl mx-auto space-y-4 pb-10 font-sans text-neutral-950">
+      <BookingScanner scope={catalogueScope} actor={currentUser} onCheckedIn={onBookingCheckedIn}/>
       {/* Header */}
       <div className="bg-white border border-neutral-200 rounded-xl p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>

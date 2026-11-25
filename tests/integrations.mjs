@@ -81,12 +81,13 @@ try {
  await page.getByRole('button',{name:'Preview PDF Report',exact:true}).click();
  check(await page.getByRole('button',{name:'Download Official PDF Report',exact:true}).isDisabled(),'radiology blocks official report download before approval');
  await page.keyboard.press('Escape');
+ await page.getByRole('checkbox',{name:/requested scan has been performed/}).check();await page.getByRole('button',{name:'Record scan completed',exact:true}).click();
  await page.getByRole('textbox',{name:'Radiology findings',exact:true}).fill('Synthetic imaging findings for software testing.');
  await page.locator('textarea').fill('Synthetic imaging impression for software testing.');
  const radCanvas=page.getByLabel('Draw report signature');await radCanvas.scrollIntoViewIfNeeded();const radBox=await radCanvas.boundingBox();
  await page.mouse.move(radBox.x+20,radBox.y+40);await page.mouse.down();await page.mouse.move(radBox.x+130,radBox.y+60,{steps:12});await page.mouse.up();
  await page.getByLabel(/I reviewed this patient/).check();await page.getByRole('button',{name:'Sign this report',exact:true}).click();await page.waitForTimeout(200);
- await page.getByRole('button',{name:'Approve Report',exact:true}).click();
+ await page.getByRole('button',{name:'Approve Report',exact:true}).click();await page.waitForFunction(()=>JSON.parse(localStorage.getItem('tm_imaging_orders')||'[]').some(o=>o.orderStatus==='Released'));
  check(await page.evaluate(()=>JSON.parse(localStorage.getItem('tm_imaging_orders')||'[]')[0].orderStatus==='Released'),'signed imaging findings release and persist');
  await page.getByRole('button',{name:'Lab Worklist & Samples',exact:true}).click();
  await page.getByText(state.labs[0].accessionNumber,{exact:true}).first().click();
@@ -102,7 +103,7 @@ try {
  const labCanvas=page.getByLabel('Draw report signature');await labCanvas.scrollIntoViewIfNeeded();const labBox=await labCanvas.boundingBox();
  await page.mouse.move(labBox.x+20,labBox.y+40);await page.mouse.down();await page.mouse.move(labBox.x+130,labBox.y+60,{steps:12});await page.mouse.up();
  await page.getByLabel(/I reviewed this patient/).check();await page.getByRole('button',{name:'Sign this report',exact:true}).click();await page.waitForTimeout(200);
- await page.getByRole('button',{name:'Approve Result',exact:true}).click();
+ await page.getByRole('button',{name:'Approve Result',exact:true}).click();await page.waitForFunction(()=>JSON.parse(localStorage.getItem('tm_lab_orders')||'[]').some(o=>o.orderStatus==='RELEASED'));
  const releasedLabs=await page.evaluate(()=>JSON.parse(localStorage.getItem('tm_lab_orders')||'[]'));
  check(releasedLabs.find(o=>o.id===state.labs[0].id)?.orderStatus==='RELEASED','collected and signed standard laboratory order releases');
  if(!await page.getByRole('button',{name:'Unified Charge Capture & HMO',exact:true}).isVisible()) await page.getByRole('button',{name:/Finance & Billing/}).click();
@@ -111,10 +112,10 @@ try {
  const paid=await page.evaluate(()=>({charges:JSON.parse(localStorage.getItem('tm_charges')||'[]'),images:JSON.parse(localStorage.getItem('tm_imaging_orders')||'[]')}));
  check(paid.charges.filter(c=>c.paymentStatus==='Paid').length===1&&paid.images[0].billingStatus==='Paid','billing payment updates the linked diagnostic order');
  await page.getByRole('button',{name:'Lab Overview',exact:true}).click();await page.getByRole('region',{name:'Clinical workflow analytics'}).waitFor();
- check(await page.getByText('CEO workflow dashboard',{exact:true}).isVisible(),'role dashboard shows operational analytics from current records');
+ check(await page.getByRole('heading',{name:'Lab Overview',exact:true}).isVisible(),'role dashboard shows operational analytics from current records');
 
  check(failures.length===0,'no uncaught integration browser errors');
  console.log('INTEGRATION_CHECKS_PASSED',passed.length);
  await fs.writeFile(path.join(artifacts,'integration-results.json'),JSON.stringify({passed,failures},null,2));
-} catch(error) {console.error('INTEGRATION_FAILED',error.message);console.error('BODY',(await page.locator('body').innerText()).slice(-5000));await page.screenshot({path:path.join(artifacts,'integration-failure.png'),fullPage:true}).catch(()=>{});process.exitCode=1;}
+} catch(error) {console.error('INTEGRATION_FAILED',error.message);console.error('RUNTIME_ERRORS',JSON.stringify(failures));console.error('BODY',(await page.locator('body').innerText()).slice(-5000));await page.screenshot({path:path.join(artifacts,'integration-failure.png'),fullPage:true}).catch(()=>{});process.exitCode=1;}
 finally {await browser.close();}

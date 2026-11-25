@@ -358,7 +358,7 @@ export function LoginPage({
     <div 
       className="min-h-screen w-full relative flex items-center justify-center p-4 bg-cover bg-center bg-no-repeat font-sans"
       style={{ backgroundImage: 'url(/stethoscope_bg.jpg)' }}
-    >
+    ><a href="/book" className="fixed top-4 right-4 z-50 bg-white border rounded-lg px-4 py-2 font-bold text-blue-700">Book laboratory tests</a>
       {/* Dark overlay for rich contrast and legibility */}
       <div className="absolute inset-0 bg-slate-950/75 backdrop-blur-md" />
 

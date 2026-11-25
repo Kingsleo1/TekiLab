@@ -21,6 +21,8 @@ await context.addInitScript(()=>{
  Object.defineProperty(window,'SpeechRecognition',{value:undefined,configurable:true});
  Object.defineProperty(window,'webkitSpeechRecognition',{value:undefined,configurable:true});
 });
+const syntheticTenant='SYNTH-BROWSER-'+Date.now();
+await context.route('**/api/lims/tenant-config/**',r=>r.fulfill({json:{config:{tenantId:syntheticTenant,modules:{lims:true,emr:true,hospital_management:true,pharmacy:true,billing:true,ai_analytics:true}}}}));
 const page=await context.newPage();page.on('pageerror',e=>failures.push(e.message));
 page.setDefaultTimeout(20000);
 try {
@@ -58,7 +60,7 @@ try {
  const worksheet=await worksheetDownload;await worksheet.saveAs(path.join(artifacts,'synthetic-review.pdf'));
  check((await fs.stat(path.join(artifacts,'synthetic-review.pdf'))).size>1000,'detailed advisory review downloads without AI');
  check(await page.getByRole('button',{name:'Sign this report',exact:true}).isDisabled(),'signature requires drawing and explicit report approval');
- const canvas=page.getByLabel('Draw report signature');const box=await canvas.boundingBox();
+ const canvas=page.getByLabel('Draw report signature');await canvas.scrollIntoViewIfNeeded();const box=await canvas.boundingBox();
  await page.mouse.move(box.x+20,box.y+45);await page.mouse.down();
  for(let i=0;i<20;i++)await page.mouse.move(box.x+20+i*7,box.y+45+Math.sin(i)*12);
  await page.mouse.up();
@@ -86,7 +88,7 @@ try {
  const savedResponse=page.waitForResponse(r=>r.url().includes('/rapid-result/dispatch')&&r.request().method()==='POST');
  await page.getByRole('button',{name:'Save Approved Report',exact:true}).click();
  const response=await savedResponse;check(response.status()===200,'signed manual rapid report saves through the API');
- await page.waitForTimeout(300);
+ await page.waitForFunction(()=>JSON.parse(localStorage.getItem('tm_lab_orders')||'[]').some(o=>o.orderStatus==='RELEASED'));
  const state=await page.evaluate(()=>({orders:JSON.parse(localStorage.getItem('tm_lab_orders')||'[]'),queue:JSON.parse(localStorage.getItem('tm_queue_tickets')||'[]')}));
  check(state.orders.length===1&&state.orders[0].orderStatus==='RELEASED'&&state.orders[0].billingStatus==='Pending'&&state.orders[0].reportApproval.signerId==='SYNTH-REVIEWER','released report preserves approval and does not invent payment');
  check(state.queue.some(q=>q.patientId==='SYNTH-P1'&&q.department==='Doctor Consultation'&&q.status==='Waiting'),'released report reaches the doctor follow-up queue');
@@ -103,7 +105,7 @@ try {
  console.log('BROWSER_CHECKS_PASSED',passed.length);
  await fs.writeFile(path.join(artifacts,'results.json'),JSON.stringify({passed,failures},null,2));
 } catch(error) {
- console.error('BROWSER_TEST_FAILED',error.message);console.error('BODY',(await page.locator('body').innerText()).slice(-9000));
+ console.error('BROWSER_TEST_FAILED',error.message);console.error('RUNTIME_ERRORS',JSON.stringify(failures));console.error('BODY',(await page.locator('body').innerText()).slice(-9000));
  await page.screenshot({path:path.join(artifacts,'failure.png'),fullPage:true}).catch(()=>{});
  process.exitCode=1;
 } finally {await browser.close();}

@@ -1,8 +1,11 @@
+import { FinancialOverview } from './components/dashboard/FinancialOverview';
+import { fetchCatalogueOrders, saveCatalogueRecord, confirmCataloguePayment } from './services/test-catalog';
 import { useState, useEffect, lazy, Suspense } from 'react';
 import { WorkflowDashboard } from './components/dashboard/WorkflowDashboard';
 import { routePatient, transferTicket, completeDiagnostic, chargeForOrder } from './lib/workflow';
 import { clearSignatureVault } from './lib/report-approval';
 import { getLocalPharmacyHandoffQueue } from './lib/cross-module-handoff';
+import { useTestCatalogue } from './hooks/useTestCatalogue';
 import { Toaster, toast } from 'sonner';
 import { syncOfflineCache, registerSyncListener, startPeriodicSync } from './services/syncManager';
 import { getPendingSales } from './services/offlineDB';
@@ -83,7 +86,6 @@ const IntegrationsView = lazy(() => import('./components/dashboard/admin/Integra
 const MerchantStoreView = lazy(() => import('./components/dashboard/admin/MerchantStoreView').then(m => ({ default: m.MerchantStoreView })));
 const AdminSecurityModal = lazy(() => import('./components/dashboard/admin/AdminSecurityModal').then(m => ({ default: m.AdminSecurityModal })));
 const SuperAdminSaaSView = lazy(() => import('./components/dashboard/admin/SuperAdminSaaSView').then(m => ({ default: m.SuperAdminSaaSView })));
-const AstraDatabaseSetupModal = lazy(() => import('./components/dashboard/admin/AstraDatabaseSetupModal').then(m => ({ default: m.AstraDatabaseSetupModal })));
 import { UserAccountMenu } from './components/dashboard/UserAccountMenu';
 
 import { DashboardFooter } from './components/dashboard/DashboardFooter';
@@ -177,9 +179,12 @@ type DashView =
   | 'supply_records'
   | 'new_supplier'
   | 'list_of_suppliers'
+  | 'financials'
   | 'admin_orders';
 
+const ClinicalPublicPages=lazy(()=>import('./components/ClinicalPublicPages').then(m=>({default:m.ClinicalPublicPages})));
 export default function App() {
+  if(/^\/(book\/?|booking\/[^/]+|verify\/[^/]+)$/.test(window.location.pathname))return <Suspense fallback={<p role="status">Loading…</p>}><ClinicalPublicPages/></Suspense>;
   return (
     <NotificationProvider>
       <TenantModuleProvider>
@@ -282,6 +287,20 @@ function AppShell() {
   });
 
   const [labCatalog, setLabCatalog] = useState<any[]>(DEFAULT_LAB_TEST_CATALOG);
+  const catalogueScope = { tenantId: currentUser?.tenantId || clinicalTenantConfig.tenantId, branchId: selectedBranchId };
+  useEffect(()=>{sessionStorage.setItem("tekilab_active_scope",JSON.stringify(catalogueScope));},[catalogueScope.tenantId,catalogueScope.branchId]);
+  const { snapshot: catalogueSnapshot, error: catalogueError, refresh: refreshCatalogue } = useTestCatalogue(catalogueScope, currentUser);
+  const mergeCatalogueRecords=(bundle:any)=>{
+    const merge=(previous:any[],next:any[])=>{const map=new Map(previous.map(item=>[item.id,item]));next.forEach(item=>map.set(item.id,item));return Array.from(map.values());};
+    setLabOrders(prev=>merge(prev,(bundle.orders||[]).filter((o:any)=>o.department!=='Radiology')));
+    setImagingOrders(prev=>merge(prev,(bundle.orders||[]).filter((o:any)=>o.department==='Radiology')));
+    setCharges(prev=>merge(prev,bundle.charges||[]));
+    setQueueTickets(prev=>merge(prev,bundle.queueTickets||[]));
+    if(bundle.patient)setPatients(prev=>merge(prev,[bundle.patient]));
+  };
+  useEffect(()=>{let active=true;if(currentUser?.id&&selectedBranchId!=='all')fetchCatalogueOrders(catalogueScope,currentUser).then(data=>{if(active)mergeCatalogueRecords(data);}).catch(()=>{});return()=>{active=false;};},[currentUser?.id,selectedBranchId,catalogueScope.tenantId]);
+
+  useEffect(() => { if (catalogueSnapshot){setLabCatalog(catalogueSnapshot.items.filter(item=>item.workflow!=='imaging'));setImagingCatalog(catalogueSnapshot.items.filter(item=>item.workflow==='imaging'));} }, [catalogueSnapshot]);
   const [labOrders, setLabOrders] = useState<any[]>(() => {
     const saved = localStorage.getItem('tm_lab_orders');
     return saved ? JSON.parse(saved) : DEFAULT_LAB_ORDERS;
@@ -348,7 +367,6 @@ function AppShell() {
 
   const [showWelcome, setShowWelcome] = useState(false);
   const [isAdminSecurityOpen, setIsAdminSecurityOpen] = useState(false);
-  const [isAstraModalOpen, setIsAstraModalOpen] = useState(false);
   const [activeTenant, setActiveTenant] = useState<Tenant | null>(null);
   const [allTenants, setAllTenants] = useState<Tenant[]>([]);
   const [currentPath, setCurrentPath] = useState<string>(() => {
@@ -895,9 +913,9 @@ function AppShell() {
     if (role === 'admin' || currentUser?.role === 'Kernel Admin' || currentUser?.role === 'admin') return true;
     const permissions = [...new Set([...(currentUser?.permissions || []), ...getRoleDefinition(currentUser?.role).permissions])];
     const clinicalAccess: Record<string, string[]> = {
-      rapid_console: ['canRunRapidLab','canCollectSamples'], lab: ['canRunRapidLab'], radiology: ['canReviewImaging'],
+      rapid_console: ['canRunRapidLab','canCollectSamples','canManageBookings','canReviewImaging'], lab: ['canRunRapidLab'], radiology: ['canReviewImaging','canRunRapidLab','canManageBookings','canViewBranchAnalytics'],
       emr: ['canConsultPatients'], queue: ['canManageQueue'], patients: ['canManagePatients'],
-      billing: ['canManageBilling'], module_config: ['canManageModules'], ai_assistant: ['canRunRapidLab','canConsultPatients'],
+      financials: ['canManageBilling','canViewBranchAnalytics'], billing: ['canManageBilling'], module_config: ['canManageModules'], ai_assistant: ['canRunRapidLab','canConsultPatients'],
       inpatient: ['canConsultPatients','canNursePatients'], nurse_station: ['canConsultPatients']
     };
     if (clinicalAccess[v]) return clinicalAccess[v].some(p => permissions.includes(p));
@@ -1340,25 +1358,9 @@ function AppShell() {
                 />
               </div>
               
-              {!pwa.isInstalled && (
-                <Button 
-                  onClick={() => pwa.setShowInstallModal(true)}
-                  className="h-8 sm:h-9 px-2 sm:px-2.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm shadow-blue-500/20 cursor-pointer shrink-0"
-                  title="Download or Install Teki Pharm App"
-                >
-                  <HardDrive size={13} className="text-white shrink-0" />
-                  <span className="hidden xl:inline">Install App</span>
-                </Button>
-              )}
 
-              <Button 
-                onClick={() => setIsAstraModalOpen(true)}
-                className="h-8 sm:h-9 px-2 sm:px-2.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-medium text-xs flex items-center gap-1.5 shadow-sm shadow-emerald-500/20 cursor-pointer shrink-0"
-                title="Open DataStax Astra CQL Database Code & .env Setup"
-              >
-                <Database size={13} className="text-white shrink-0" />
-                <span className="hidden xl:inline">Astra CQL Setup</span>
-              </Button>
+
+
 
               {(role === 'admin' || currentUser?.role === 'Kernel Admin') && (
                 <Button 
@@ -1431,8 +1433,9 @@ function AppShell() {
                     <>
                       {view === 'overview' && (<>
                         <WorkflowDashboard labs={labOrders} imaging={imagingOrders} tickets={queueTickets} charges={charges} user={currentUser} onNavigate={v => setView(v as DashView)} />
-                        <OverviewView role={role} setView={(v) => setView(v as any)} selectedBranchId={selectedBranchId} />
+
                       </>)}
+                      {view === 'financials' && <FinancialOverview canManageBilling={getRoleDefinition(currentUser?.role).permissions.includes('canManageBilling')||currentUser?.permissions?.includes('canManageBilling')} charges={charges} onNavigate={v=>setView(v as DashView)}/>}
                       {view === 'saas_control' && (
                         <SuperAdminSaaSView
                           isSuperAdmin={role === 'admin' || currentUser?.role === 'Kernel Admin'}
@@ -1605,6 +1608,11 @@ function AppShell() {
                       )}
                       {view === 'rapid_console' && (
                         <RapidResultConsole
+                          catalogueSnapshot={catalogueSnapshot}
+                          catalogueScope={catalogueScope}
+                          catalogueError={catalogueError}
+                          onRefreshCatalogue={refreshCatalogue}
+                          onCatalogueOrders={mergeCatalogueRecords}
                           labOrders={labOrders}
                           labCatalog={labCatalog}
                           patients={patients}
@@ -1657,11 +1665,12 @@ function AppShell() {
                         />
                       )}
                       {view === 'lab' && (
-                        <LaboratoryLIMSView 
+                        <LaboratoryLIMSView onNavigate={v=>setView(v as DashView)}
                           labOrders={labOrders} 
                           labCatalog={labCatalog} 
                           patients={patients}
-                          onUpdateLabOrder={(updated) => {
+                          onUpdateLabOrder={async(updated) => {
+                            if((updated as any).source==='TEST_CATALOGUE'){const bundle=await saveCatalogueRecord(catalogueScope,currentUser,updated);mergeCatalogueRecords(bundle);}
                             setLabOrders(prev => prev.map(l => l.id === updated.id ? updated : l));
                             returnReleasedDiagnostic(updated);
                           }}
@@ -1669,11 +1678,12 @@ function AppShell() {
                         />
                       )}
                       {view === 'radiology' && (
-                        <RadiologyView 
+                        <RadiologyView onNavigate={v=>setView(v as DashView)}
                           imagingOrders={imagingOrders} 
                           imagingCatalog={imagingCatalog} 
                           patients={patients}
-                          onUpdateImagingOrder={(updated) => {
+                          onUpdateImagingOrder={async(updated) => {
+                            if((updated as any).source==='TEST_CATALOGUE')mergeCatalogueRecords(await saveCatalogueRecord(catalogueScope,currentUser,updated));
                             setImagingOrders(prev => prev.map(i => i.id === updated.id ? updated : i));
                             returnReleasedDiagnostic(updated, true);
                           }}
@@ -1703,7 +1713,7 @@ function AppShell() {
                         />
                       )}
                       {view === 'queue' && (
-                        <HospitalQueueManager 
+                        <HospitalQueueManager catalogueScope={catalogueScope} onBookingCheckedIn={mergeCatalogueRecords}
                           queueTickets={queueTickets} 
                           patients={patients}
                           onIssueTicket={(t) => {
@@ -1739,7 +1749,12 @@ function AppShell() {
                             setCharges(newChg);
                             localStorage.setItem('tm_charges', JSON.stringify(newChg));
                           }}
-                          onPayCharge={(cid) => {
+                          onPayCharge={async(cid) => {
+                            const sourceCharge=charges.find(c=>c.id===cid);
+                            const sourceOrder=[...labOrders,...imagingOrders].find(o=>o.id===sourceCharge?.sourceOrderId);
+                            if(sourceOrder?.source==='TEST_CATALOGUE'){
+                              try{mergeCatalogueRecords(await confirmCataloguePayment(catalogueScope,currentUser,sourceOrder.id));toast.success('Payment recorded.');}catch(error:any){toast.error(error.message);}return;
+                            }
                             setCharges(prev => prev.map(c => c.id === cid ? { ...c, paymentStatus: 'Paid' } : c));
                             const charge = charges.find(c => c.id === cid);
                             if (charge?.sourceOrderId) {
@@ -1791,6 +1806,8 @@ function AppShell() {
             <DashboardFooter
               logoUrl={hasCustomCompanyLogo ? activeTenant?.logo : undefined}
               companyName={!isAdminRoute ? activeTenant?.companyName : undefined}
+              onInstallApp={() => pwa.setShowInstallModal(true)}
+              isInstalled={pwa.isInstalled}
             />
           </div>
         </div>
@@ -1843,11 +1860,7 @@ function AppShell() {
           onUserUpdate={(u) => setCurrentUser(u)} 
         />
 
-        {/* DataStax Astra CQL & Environment Variables Setup Modal */}
-        <AstraDatabaseSetupModal
-          isOpen={isAstraModalOpen}
-          onClose={() => setIsAstraModalOpen(false)}
-        />
+
 
         {/* PWA App Installation Modal */}
         <PWAInstallModal 

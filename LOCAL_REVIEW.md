@@ -1,65 +1,74 @@
-# TekiLab local review
+# TekiLab local review — 25 November 2026
 
-Branch: `chatgpt/tekilab-ui-workflow`
-Starting commit: `fb39e20156da1bb381aaf9d84c781f01fc6ba819`
-Review date: 2026-11-24
+Preview: http://localhost:3000
 
-## Local preview
+Worktree: C:\Users\AGU\Desktop\TekiLab-ChatGPT-preview
 
-Run `npm run dev`, then open http://localhost:3000. The Express preview defaults to loopback access. Astra routes are locked, database mirroring is disabled, external AI is disabled, and the preview browser's outbound connections are restricted to localhost.
+Branch: chatgpt/tekilab-ui-workflow
 
-The existing LIMS Core preset remains the default. Enable optional departments under **Feature Visibility** when reviewing the full hospital workflow. Module muting remains available.
+## What is implemented
 
-## Implemented behavior
+- Administrators, branch managers and clinical leads land on Lab Overview. Its operational cards and shortcuts open the laboratory, radiology, reception, patient registry, new-order and financial pages.
+- Business financial charts use recorded patient charges: amounts raised, collected, outstanding and waived; daily invoice cohorts; and service mix. The dedicated financial page includes ledger detail and 7/30/90-day reporting. These are patient-ledger figures, not bank settlements, expenses or profit.
+- The shared catalogue contains 1,326 entries: 1,086 laboratory tests/panels and 240 imaging entries. Search, department/category filters, multiple selection and visible fees or “quote required” are available in walk-in ordering and online booking. The catalogue is expandable, not globally exhaustive.
+- Authorized accounts can add/configure, archive, restore and price tests/scans. CEO/branch managers manage both; clinical leads manage tests/templates; billing manages fees. Explicit delegated permissions are supported. Archive preserves historical orders.
+- Imaging requests carry modality, body site, fee and order snapshot into radiology queues and billing. Radiology supports recorded scan completion, draft findings, professional signature, release and verification PDFs. Laboratory worklists and the rapid order page provide radiology links.
+- The rapid page has a prominent sticky New Test heading. Only a single reviewed rapid template enters rapid result steps; mixed, multiple or specialist orders go to departmental worklists.
+- Online booking produces an unpaid receipt with a real QR code. Reception can validate pasted/USB scanner input, or request camera access, confirm client identity and check in. Repeat scans restore the same orders, patient and queue records without duplicate orders.
+- Approved laboratory/radiology results receive opaque verification links. The dedicated verification page opens the full approved result for anyone possessing the link, as requested; it supports print and PDF download. Published report contents are immutable. Authorized reviewers can withdraw a report. A withdrawn link no longer displays a valid report; previously downloaded copies cannot be recalled.
+- PDF QR codes link to this site's booking or result verification pages. The existing specimen QR and label workflow is retained.
+- Rich findings, optional browser-native dictation, advisory review downloads and reusable session signatures remain. Each report requires explicit human approval; content changes invalidate the approval.
+- The header database/CQL control is removed. App installation is offered in the footer.
 
-- A completed, signed consultation creates every selected laboratory and imaging order, links each to the encounter, creates unpaid diagnostic charges, and routes each order to its department.
-- Sample collection, measured result entry, signature approval and release remain separate actions. Released diagnostics return to the doctor's follow-up queue and appear in the selected patient's consultation view.
-- Recorded billing payments update the linked diagnostic order. Operational dashboards calculate counts, collections, outstanding balances and turnaround from current records.
-- Clinicians prescribe from the selected branch's inventory. A signed consultation sends the entered medication, quantity and prescriber details to pharmacy. AI suggestions cannot become prescriptions.
-- Pharmacy reserves the prescription before loading the correct patient's cart. Successful checkout records dispensing for the matching prescribed quantity.
-- Laboratory, radiology, rapid and consultation reports require a signature and explicit approval of their current contents. Editing content invalidates approval.
-- Optional signature reuse is held in memory, scoped to the signed-in identity, and cleared on sign-out or identity change. Reuse still requires selecting the session signature and approving the new report. Approved reports retain their signature and content digest.
-- Findings support bold, italic, underline, lists, undo and redo. Pasted input is plain text and persisted rich text is sanitized.
-- Browser speech recognition supports dictation without TekiLab paid-AI credits where available. Unsupported browsers retain typing. Browser speech providers may process audio remotely; this is not an offline-speech guarantee.
-- Rapid tests can proceed through manual professional review without AI. An optional confirmed fee creates an unpaid charge on save; unquoted tests remain pending pricing. Turnaround uses elapsed wall-clock time without an artificial minimum. Advisory review worksheets contain measurements, source, flags, notes and an explicit human-review requirement.
-- Specimen labels contain generated QR images and download as PDFs. Diagnostic and consultation PDFs contain entered findings and approval metadata.
-- Report release prepares a generic WhatsApp notification link. It does not claim delivery, WhatsApp registration, SMS delivery or production portal persistence.
-- Dashboard views load on demand. Existing pharmacy, administration, reporting and SaaS styling edits are included.
+## Persistence and checkout
 
-## Repeatable checks
+Catalogue changes, audit events, catalogue orders, booking/check-in records, payments and published verification records use atomic local files under ignored data/local-preview/. They survive server restart. Their records retain tenant/branch scope and an outbox for future Astra integration. The outbox is preparation only; no Astra delivery worker is running.
 
-All browser checks launch fresh headless Edge contexts with synthetic records and block external requests. They do not use the user's normal browser profile.
+Other existing clinical/pharmacy records still include browser-local or in-memory state. This is not a fully synchronized production database.
 
-| Command | Coverage |
+Catalogue polling uses revision checks and conditional responses; the picker initially renders 40 matches. Dashboard pages load on demand. A large production JavaScript chunk warning remains.
+
+Paystack initialization and verification are implemented on the server with server-calculated amounts and reference, currency, amount, booking and test-domain validation. Unknown or reference-only fees cannot be charged online. Preview accepts test keys only. No provider key was configured, no live payment was taken, and actual provider checkout was not exercised. Confirm starter facility fees before operational use. Cash/payment recording is supported in the billing workflow.
+
+Public booking currently uses the server-configured facility scope. Multi-tenant public routing requires the trusted production backend.
+
+## Verified results
+
+All eight commands passed:
+
+| Command | Result |
 | --- | --- |
-| `npm run lint` | TypeScript check without emitting application files |
-| `npm test` | 12 workflow, approval, analytics and validation tests |
-| `npm run build` | Vite production build |
-| `npm run test:api` | 15 local API checks, including rejection paths |
-| `npm run test:browser` | 19 rapid-workflow, editor, signature, download and responsive checks |
-| `npm run test:integration` | 16 consultation, multiple-order, pharmacy checkout, laboratory, imaging, billing and dashboard checks |
+| npm run lint | TypeScript passed |
+| npm test | 40 tests passed |
+| npm run build | Vite build passed |
+| npm run test:api | 15 checks passed |
+| npm run test:browser | 19 checks passed |
+| npm run test:integration | 16 checks passed |
+| npm run test:qr | 25 checks passed |
+| npm run test:management | 20 checks passed |
 
-Generated browser evidence is saved under ignored `work/browser-results/`. The browser suite checks a 390px mobile viewport and reports uncaught browser errors. Download tests verify that specimen, review and signed-report PDFs are produced; they do not certify every possible PDF layout.
+Total: 135 automated checks, using synthetic records and fresh headless Edge contexts. External browser requests were blocked. Tests cover approval invalidation, signature reuse, multiple orders, departmental handoffs, pharmacy checkout, billing, catalogue roles/audit, stale edits, request replay, branch separation, booking check-in, report withdrawal and management navigation.
 
-## Performance evidence
+Booking, laboratory and radiology PDFs were rendered and their QR codes actually decoded and checked against working local routes. Booking and radiology page renders were also visually inspected. Print actions invoked the browser print flow; physical printer output was not tested.
 
-Before dashboard splitting, the main JavaScript bundle was 3,648.97 kB (977.38 kB gzip). The implementation build reduced it to 1,577.46 kB (465.93 kB gzip), about 57% smaller before compression. This is bundle-size evidence, not a measured clinical throughput or page-speed score. A large-chunk warning remains.
+Mobile checks cover rapid review, public verification and management charts at 390px width. No uncaught browser errors were reported by the passing suites.
 
-## Remaining work and release blockers
+Dependency audit: zero runtime advisories; seven moderate development-tool advisories remain. No high or critical advisories were reported by the full audit.
 
-- Production authentication and tenant/branch authorization must be enforced by trusted server sessions. Existing browser-stored identities and role metadata are not a production security boundary. Signature digests bind report content; they do not establish a trusted server identity.
-- Shared server state is currently in memory and browser records remain local. Durable persistence, cross-device synchronization, audit retention and reconciliation after interrupted checkout or a server restart need the approved backend work. Cached pharmacy records are retained, but a restarted server may need reconciliation before their status can be changed.
-- Vercel serverless handlers need validation and authorization parity with the local Express implementation before deployment.
-- Live paid-AI provider calls, actual microphone transcription, physical camera scanning, thermal-printer output and real notification delivery were not verified. AI remains advisory and human review remains mandatory.
-- The responsive check covers the rapid review screen; every departmental screen, browser, assistive technology and print layout has not been exhaustively certified.
-- The final runtime dependency audit reports zero advisories. Seven moderate advisories remain in development tools and need a separately tested toolchain update. Compatible fixes were applied, unused Firebase was removed after confirming no application imports, and development-only generators were moved to development dependencies.
+Evidence is local and ignored under work/: final-validation-v2.json, final-*.txt, qr-results/, browser-results/ and management-results/. Synthetic preview records may remain for review. The user's regular browser profile was not cleared or used for automated tests.
 
-## Approval holds
+## Remaining release work and explicit holds
 
-Astra DB migration and Vercel deployment remain on hold until the user reviews the local application and explicitly approves the next stage. Do not treat successful preview tests as deployment approval.
+- Configure trusted server authentication and tenant/branch authorization. Browser-stored role metadata is only a local preview identity. New staff mutation routes fail closed outside preview until a trusted resolver is provided. Signature digests bind contents; they do not establish a trusted server identity or certificate-based digital signature.
+- Implement approved durable production storage, Astra mappings/outbox delivery, full cross-device reconciliation and audit retention. Vercel handlers need local Express feature/authentication parity; local files are not serverless storage.
+- Configure an approved public HTTPS origin and backend before worldwide QR access. A localhost QR works on the preview computer, not on an arbitrary phone or overseas device.
+- Configure and exercise the payment provider with approved facility fees before enabling real checkout.
+- Physical camera/USB hardware, microphone transcription, actual notification delivery, and physical printers have not been verified. Camera and dictation availability depend on the browser and permissions.
+- This is workflow/reporting software; no scanner hardware, DICOM/PACS acquisition or clinical accuracy validation is claimed.
+- Broader device/accessibility and long-report layouts still need operational review.
 
-The original Antigravity source checkout was not used for application edits and remained at `e4a810e` during verification. Its shared Git metadata is used by this separate worktree.
+Astra DB migration and Vercel deployment remain on hold until local review and explicit user approval. The original Antigravity source checkout remains at e4a810e; application edits are in the separate preview worktree.
 
-## Final validation result
+## Server restart verification
 
-All six validation commands exited successfully. The final run passed 62 automated checks: 12 unit, 15 API, 19 rapid browser and 16 department integration checks. Runtime dependency audit: zero advisories. Development tools: seven moderate advisories remain.
+After restarting the preview server, the home and booking pages returned HTTP 200. The approved report digest, checked-in booking, two mixed-department orders, archived catalogue item and its fee were preserved. Astra migration still returned HTTP 423, and external AI remained disabled.

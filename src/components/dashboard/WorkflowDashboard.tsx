@@ -1,21 +1,18 @@
-import { useMemo } from 'react';
-import { summarizeWorkflow } from '../../lib/workflow';
-import { getRoleDefinition } from '../../config/roles';
-export function WorkflowDashboard({ labs, imaging, tickets, charges, user, onNavigate }: {
-  labs: any[]; imaging: any[]; tickets: any[]; charges: any[]; user: any; onNavigate: (view: string) => void;
-}) {
-  const stats = useMemo(() => summarizeWorkflow(labs, imaging, tickets, charges), [labs, imaging, tickets, charges]);
-  const role = getRoleDefinition(user?.role);
-  const metrics: [string, string | number, string][] = [
-    ['Active queue', stats.activeQueue, 'queue'], ['Pending laboratory', stats.pendingLabs, 'lab'],
-    ['Awaiting review', stats.awaitingReview, 'lab'], ['Pending scans', stats.pendingImaging, 'radiology'],
-    ['Released lab reports', stats.released, 'lab'], ['Average lab turnaround', stats.averageTat === null ? 'No completed timings' : stats.averageTat.toFixed(1) + ' min', 'lab'],
-    ['Within 10 minutes', stats.slaPercent === null ? 'No completed timings' : stats.slaPercent + '%', 'lab']
-  ];
-  if (role.permissions.includes('canManageBilling')) metrics.push(['Collected', 'NGN ' + stats.collected.toLocaleString(), 'billing'], ['Outstanding', 'NGN ' + stats.outstanding.toLocaleString(), 'billing']);
-  return <section className="rounded-xl border bg-white text-slate-900 p-4 space-y-4" aria-label="Clinical workflow analytics">
-    <div><h2 className="text-lg font-semibold">{role.shortLabel} workflow dashboard</h2><p className="text-xs text-slate-500">Current local records. Turnaround uses recorded creation and release times.</p></div>
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{metrics.map(([label,value,view]) =>
-      <button key={label} onClick={() => onNavigate(view)} className="text-left rounded-lg border p-3 hover:bg-slate-50"><span className="block text-xs text-slate-500">{label}</span><strong className="block mt-1 text-lg break-words">{value}</strong></button>)}</div>
-  </section>;
+import {useMemo} from 'react';
+import {summarizeWorkflow} from '../../lib/workflow';
+import {getRoleDefinition} from '../../config/roles';
+import {FinancialOverview} from './FinancialOverview';
+export function WorkflowDashboard({labs,imaging,tickets,charges,user,onNavigate}:{labs:any[];imaging:any[];tickets:any[];charges:any[];user:any;onNavigate:(view:string)=>void}){
+ const stats=useMemo(()=>summarizeWorkflow(labs,imaging,tickets,charges),[labs,imaging,tickets,charges]);
+ const role=getRoleDefinition(user?.role),permissions=new Set([...role.permissions,...(user?.permissions||[])]);
+ const finance=permissions.has('canManageBilling')||permissions.has('canViewBranchAnalytics');
+ const metrics:[string,string|number,string][]=[
+ ['Active queue',stats.activeQueue,'queue'],['Pending laboratory',stats.pendingLabs,'lab'],['Awaiting review',stats.awaitingReview,'lab'],['Pending scans',stats.pendingImaging,'radiology'],
+ ['Released lab reports',stats.released,'lab'],['Average lab turnaround',stats.averageTat===null?'No completed timings':stats.averageTat.toFixed(1)+' min','lab'],['Within 10 minutes',stats.slaPercent===null?'No completed timings':stats.slaPercent+'%','lab']];
+ const links=[['New test or scan','rapid_console'],['Laboratory worklist','lab'],['Radiology & scans','radiology'],['Bookings & reception','queue'],['Patient registry','patients'],...(finance?[['Business financials','financials']]:[])];
+ return <div className="space-y-5"><section className="rounded-xl border bg-white text-slate-900 p-4 sm:p-6 space-y-4" aria-label="Clinical workflow analytics">
+ <div><h1 className="text-3xl font-black">Lab Overview</h1><p className="text-sm text-slate-500">{role.shortLabel} · Current local records and recorded turnaround times</p></div>
+ <nav aria-label="Lab overview shortcuts" className="flex flex-wrap gap-2">{links.map(([label,view])=><button key={view} onClick={()=>onNavigate(view)} className="border rounded-lg px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50">{label}</button>)}</nav>
+ <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">{metrics.map(([label,value,view])=><button key={label} onClick={()=>onNavigate(view)} className="text-left rounded-lg border p-3 hover:bg-slate-50"><span className="block text-xs text-slate-500">{label}</span><strong className="block mt-1 text-lg break-words">{value}</strong></button>)}</div>
+ </section>{finance&&<FinancialOverview canManageBilling={permissions.has('canManageBilling')} charges={charges} onNavigate={onNavigate} compact/>}</div>;
 }

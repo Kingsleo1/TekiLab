@@ -118,6 +118,7 @@ export const VIEW_TO_MODULE_MAP: Record<string, TekiLabModuleKey | 'core'> = {
   rapid_console: 'lims',
   lab: 'lims',
   overview: 'core',
+  financials: 'core',
   saas_control: 'core',
   module_config: 'core',
   staff: 'core',
@@ -137,7 +138,7 @@ export const VIEW_TO_MODULE_MAP: Record<string, TekiLabModuleKey | 'core'> = {
   emr: 'emr',
 
   // Hospital Management Module
-  radiology: 'hospital_management',
+  radiology: 'lims',
   inpatient: 'hospital_management',
   appointments: 'hospital_management',
 

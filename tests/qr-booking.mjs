@@ -1,0 +1,91 @@
+import {chromium} from 'playwright';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {createHash} from 'node:crypto';
+import jsQR from 'jsqr';
+import {createCanvas,DOMMatrix,ImageData,Path2D} from '@napi-rs/canvas';
+globalThis.DOMMatrix=DOMMatrix;globalThis.ImageData=ImageData;globalThis.Path2D=Path2D;
+const {getDocument}=await import('pdfjs-dist/legacy/build/pdf.mjs');
+const base='http://localhost:3000',out=path.resolve('work/qr-results');await fs.mkdir(out,{recursive:true});
+const passed=[];const check=(value,label)=>{assert.ok(value,label);passed.push(label);console.log('PASS',label);};
+async function decodePDF(file){
+ const task=getDocument({data:new Uint8Array(await fs.readFile(file)),useSystemFonts:true,disableFontFace:true});const pdf=await task.promise;
+ const decoded=[];
+ for(const number of [...new Set([1,pdf.numPages])]){
+  const page=await pdf.getPage(number),viewport=page.getViewport({scale:3}),canvas=createCanvas(Math.ceil(viewport.width),Math.ceil(viewport.height)),ctx=canvas.getContext('2d');
+  await page.render({canvas,canvasContext:ctx,viewport}).promise;
+  const x=Math.floor(canvas.width*160/210),y=Math.floor(canvas.height*240/297),width=canvas.width-x,height=Math.floor(canvas.height*40/297);
+  const pixels=ctx.getImageData(x,y,width,height);const qr=jsQR(new Uint8ClampedArray(pixels.data),width,height);assert.ok(qr,'Rendered PDF QR must decode');decoded.push(qr.data);
+  await fs.writeFile(path.join(out,path.basename(file,'.pdf')+'-page-'+number+'.png'),canvas.toBuffer('image/png'));
+ }
+ await task.destroy();return decoded;
+}
+const browser=await chromium.launch({channel:'msedge',headless:true}),context=await browser.newContext({viewport:{width:1280,height:1000},acceptDownloads:true});
+await context.route('**/*',r=>['localhost','127.0.0.1'].includes(new URL(r.request().url()).hostname)?r.continue():r.abort());
+const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));page.setDefaultTimeout(25000);
+const config=await (await fetch(base+'/api/lims/qr/booking-config')).json();
+const actor={id:'SYNTH-QR-REVIEWER',name:'Synthetic QR Reviewer',email:'qr@example.invalid',role:'Kernel Admin',branchId:config.scope.branchId,tenantId:config.scope.tenantId,permissions:[]};
+const scopeQuery=new URLSearchParams(config.scope),headers={'Content-Type':'application/json','X-TekiLab-Preview-Actor':encodeURIComponent(JSON.stringify(actor))};
+async function api(route,body,expected=200){const response=await fetch(base+'/api/lims/qr'+route+'?'+scopeQuery,{method:body===undefined?'GET':'POST',headers,...(body===undefined?{}:{body:JSON.stringify(body)})});assert.equal(response.status,expected,route+': '+await response.clone().text());return response.json();}
+try{
+ await page.goto(base+'/book');await page.getByLabel('Full name',{exact:true}).fill('Synthetic QR Booking '+Date.now());await page.getByLabel('Phone',{exact:true}).fill('00000000000');
+ await page.getByRole('checkbox',{name:/Order multiple tests/}).check();
+ const choices=page.getByRole('group',{name:'Available tests'}).getByRole('checkbox');await choices.nth(0).click();await page.getByRole('button',{name:'Radiology / Scans',exact:true}).click();await choices.nth(0).click();
+ check(await page.getByText('2 tests selected',{exact:true}).isVisible(),'online booking selects multiple tests and displays order total');
+ const bookingResponse=page.waitForResponse(r=>r.url().includes('/api/lims/qr/book?')&&r.request().method()==='POST');await page.getByRole('button',{name:'Confirm booking & get QR receipt'}).click();const booking=await (await bookingResponse).json();
+ await page.getByRole('heading',{name:'Booking receipt',exact:true}).waitFor();check(booking.tests.length===2&&booking.tests.some(t=>t.department==='Radiology')&&booking.paymentStatus==='Unpaid','booking receipt preserves both tests and does not claim payment');
+ const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download receipt PDF'}).click();const receiptFile=path.join(out,'booking-receipt.pdf');await(await download).saveAs(receiptFile);
+ const receiptQR=await decodePDF(receiptFile);check(receiptQR.every(url=>url===booking.receiptUrl),'rendered booking PDF QR codes decode to the actual receipt link');
+ const publicBooking=await context.newPage();await publicBooking.goto(receiptQR[0]);await publicBooking.getByRole('heading',{name:'Valid TekiLab booking'}).waitFor();check((await publicBooking.locator('body').innerText()).includes(booking.number),'receipt QR opens the dedicated booking validation page without login');await publicBooking.close();
+ await context.addInitScript(user=>{if(!sessionStorage.getItem('qr_seeded')){localStorage.clear();localStorage.setItem('ph_current_user',JSON.stringify(user));localStorage.setItem('ph_staff_list',JSON.stringify([user]));localStorage.setItem('ph_real_data_initialized_v6','true');['tm_patients','tm_lab_orders','tm_imaging_orders','tm_queue_tickets','tm_charges','tm_encounters'].forEach(key=>localStorage.setItem(key,'[]'));sessionStorage.setItem('qr_seeded','true');sessionStorage.setItem('tekipharm_welcome_splash_shown','true');localStorage.setItem('tekipharm_pwa_dismissed','true');}},actor);
+ await context.route('**/api/lims/tenant-config/**',r=>r.fulfill({json:{config:{tenantId:config.scope.tenantId,modules:{lims:true,emr:true,hospital_management:true,pharmacy:true,billing:true,ai_analytics:true}}}}));
+ await page.goto(base+'/admin');await page.waitForTimeout(5000);await page.getByRole('button',{name:'Queue & Bookings',exact:true}).first().click();
+ await page.getByRole('button',{name:'Scan online booking QR'}).click();await page.getByLabel('Booking scanner input').fill(booking.receiptUrl);await page.getByRole('button',{name:'Validate booking',exact:true}).click();
+ await page.getByRole('checkbox',{name:/confirmed this client/}).check();const checked=page.waitForResponse(r=>r.url().includes('/check-in?'));await page.getByRole('button',{name:'Confirm check-in',exact:true}).click();const bundle=await(await checked).json();check(bundle.orders.length===2&&bundle.orders.some(o=>o.department==='Radiology'&&o.orderStatus==='Awaiting Scan')&&bundle.queueTickets.some(q=>q.department==='Radiology')&&bundle.patient.id===booking.patient.id,'reception scanner validates QR and creates patient, tests and queue records');
+ const repeat=await api('/booking/'+booking.token+'/check-in',{identityConfirmed:true});check(repeat.alreadyCheckedIn&&repeat.orders.map(o=>o.id).join()===bundle.orders.map(o=>o.id).join(),'repeat reception scan restores existing orders without duplication');
+ check(await page.getByRole('button',{name:'Use camera',exact:true}).isVisible(),'reception provides camera access alongside USB or pasted scanner input');
+ await api('/scan',{code:'https://example.invalid/booking/'+booking.token},400);await api('/booking/'+booking.token+'/check-in',{identityConfirmed:false},400);check(true,'external QR links and unconfirmed client identity are rejected');
+ await page.getByRole('button',{name:/^Rapid Workflow/}).click();await page.getByRole('heading',{name:'New Test',exact:true}).waitFor();
+ check(await page.getByRole('button',{name:'Manage tests & prices'}).isVisible(),'authorized staff can open catalogue management');
+ await page.getByRole('checkbox',{name:'Order multiple tests',exact:true}).check();const available=page.getByRole('group',{name:'Available tests'}).getByRole('checkbox');await available.nth(1).click();await available.nth(2).click();
+ check(await page.getByText('3 tests selected',{exact:true}).isVisible(),'walk-in rapid workflow supports a multiple-test order');
+ check(await page.getByRole('button',{name:'Place test order',exact:true}).isVisible(),'multiple and nonrapid selections use the normal laboratory order flow');
+ check(await page.locator('header').getByTitle('Open DataStax Astra CQL Database Code & .env Setup').count()===0,'database setup control is removed from the header');
+ await page.locator('select').filter({has:page.locator('option[value="'+booking.patient.id+'"]')}).selectOption(booking.patient.id);
+ const onsiteResponse=page.waitForResponse(r=>r.url().includes('/test-catalog/orders?')&&r.request().method()==='POST');await page.getByRole('button',{name:'Place test order',exact:true}).click();const onsite=await(await onsiteResponse).json();
+ check(onsite.orders.length===3&&onsite.orders.every(o=>o.patientId===booking.patient.id),'walk-in multiple-test submission creates distinct persisted orders for the registered patient');
+ await page.getByRole('button',{name:/^Rapid Workflow/}).click();await page.getByRole('button',{name:'Manage tests & prices',exact:true}).click();await page.getByRole('button',{name:'Add test',exact:true}).click();
+ const code='SYNTH-'+Date.now();await page.getByLabel('Test name',{exact:true}).fill('Synthetic catalogue UI assay');await page.getByLabel('Test code',{exact:true}).fill(code);await page.getByLabel('Test category',{exact:true}).fill('Synthetic QA');await page.getByLabel('Specimen requirements',{exact:true}).fill('Synthetic sample');
+ await page.getByLabel('Price requires quote').uncheck();await page.getByLabel('Facility price NGN').fill('1234');
+ const addedResponse=page.waitForResponse(r=>r.url().includes('/test-catalog/items?')&&r.request().method()==='POST');await page.getByRole('button',{name:'Save test',exact:true}).click();const added=await(await addedResponse).json();check(added.items.some(item=>item.code===code&&item.priceNaira===1234),'catalogue manager adds a test with a facility price through the saved API');
+ const removeResponse=page.waitForResponse(r=>r.url().includes('/test-catalog/items/')&&r.request().method()==='PATCH');await page.getByRole('button',{name:'Remove',exact:true}).click();const removed=await(await removeResponse).json();check(removed.items.some(item=>item.code===code&&!item.isActive),'catalogue manager removes a test from new orders without deleting history');
+ await page.getByRole('checkbox',{name:'Show removed tests',exact:true}).check();const restoreResponse=page.waitForResponse(r=>r.url().includes('/test-catalog/items/')&&r.request().method()==='PATCH');await page.getByRole('button',{name:'Restore',exact:true}).click();const restored=await(await restoreResponse).json();check(restored.items.some(item=>item.code===code&&item.isActive&&item.priceNaira===1234),'catalogue manager restores the test and retained fee');
+ const archive=page.waitForResponse(r=>r.url().includes('/test-catalog/items/')&&r.request().method()==='PATCH');await page.getByRole('button',{name:'Remove',exact:true}).click();await archive;await page.keyboard.press('Escape');
+ const patient={id:'SYNTH-RESULT-PATIENT',fullName:'Synthetic QR Result Patient',mrn:'SYNTH-RESULT-MRN'};
+ const id='SYNTH-RESULT-'+Date.now(),parameters=[{name:'Synthetic assay',value:'3',flag:'Normal',unit:'u',referenceRange:'1-5'}];
+ const order={id,patientId:patient.id,patientName:patient.fullName,mrn:patient.mrn,testId:'SYNTH-ASSAY',testName:'Synthetic verification assay',accessionNumber:id,reportNumber:id,orderStatus:'RELEASED',results:{'Synthetic assay':{value:'3',flag:'Normal',unit:'u',referenceRange:'1-5'}},clinicalInterpretation:'Synthetic approved result findings',findingsHtml:'<p>Synthetic approved result findings</p>'};
+ const snapshot=JSON.stringify({id,patientId:patient.id,patientName:patient.fullName,testId:order.testId,testName:order.testName,accessionNumber:id,parameters,clinicalInterpretation:order.clinicalInterpretation,findingsHtml:order.findingsHtml});
+ const signature=await page.evaluate(()=>{const canvas=document.createElement('canvas');canvas.width=250;canvas.height=70;const ctx=canvas.getContext('2d');ctx.fillStyle='#111827';ctx.font='24px sans-serif';ctx.fillText('Synthetic reviewer',10,45);return canvas.toDataURL('image/png');});
+ order.reportApproval={signerId:actor.id,signerName:actor.name,signedAt:new Date().toISOString(),reportSnapshot:snapshot,reportDigest:createHash('sha256').update(snapshot).digest('hex'),signaturePng:signature};
+ const published=await api('/results',{kind:'laboratory',order,patient},201);
+ const guest=await browser.newContext({acceptDownloads:true,viewport:{width:390,height:844}});await guest.route('**/*',r=>['localhost','127.0.0.1'].includes(new URL(r.request().url()).hostname)?r.continue():r.abort());const resultPage=await guest.newPage();resultPage.on('pageerror',e=>errors.push(e.message));
+ await resultPage.goto(published.url);await resultPage.getByRole('heading',{name:'Authentic approved result'}).waitFor();
+ check((await resultPage.locator('body').innerText()).includes(order.clinicalInterpretation)&&await resultPage.getByText(patient.fullName,{exact:true}).isVisible(),'result bearer link opens the full approved report without sign-in or PIN');
+ check(await resultPage.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth),'public result verification fits a 390px screen');
+ const resultDownload=resultPage.waitForEvent('download');await resultPage.getByRole('button',{name:'Download verified result PDF'}).click();const resultFile=path.join(out,'verified-result.pdf');await(await resultDownload).saveAs(resultFile);
+ const reportQR=await decodePDF(resultFile);check(reportQR.every(url=>url===published.url),'rendered verified result PDF QR codes resolve to the approved report page');
+ await resultPage.evaluate(()=>{window.print=()=>{window.__printRequested=true;};});await resultPage.getByRole('button',{name:'Print verified result',exact:true}).click();check(await resultPage.evaluate(()=>window.__printRequested),'verified result print action invokes the browser print flow');
+ await api('/results/'+published.token+'/revoke',{});await resultPage.reload();await resultPage.getByRole('heading',{name:'Verification unavailable'}).waitFor();check((await resultPage.locator('body').innerText()).includes('withdrawn'),'withdrawn result QR no longer displays or validates the full report');
+ await api('/results/not-a-token',undefined,404);check(true,'malformed result token returns not found');
+
+ const radOrder={id:'SYNTH-RAD-'+Date.now(),patientId:patient.id,patientName:patient.fullName,mrn:patient.mrn,testName:'Synthetic CT scan verification',orderStatus:'Released',clinicalIndication:'Synthetic reason',techniqueNotes:'Synthetic technique',findingsNotes:'Synthetic reviewed CT findings',impressionNotes:'Synthetic reviewed CT impression',recommendationsNotes:'Synthetic follow-up',findingsHtml:'<p>Synthetic reviewed CT findings</p>'};
+ const radSnapshot=JSON.stringify({...radOrder});radOrder.reportApproval={signerId:actor.id,signerName:actor.name,signedAt:new Date().toISOString(),reportSnapshot:radSnapshot,reportDigest:createHash('sha256').update(radSnapshot).digest('hex'),signaturePng:signature};
+ const radPublished=await api('/results',{kind:'radiology',order:radOrder,patient},201);
+ await resultPage.goto(radPublished.url);await resultPage.getByRole('heading',{name:'Authentic approved result'}).waitFor();
+ check((await resultPage.locator('body').innerText()).includes(radOrder.findingsNotes),'radiology verification page displays the approved scan findings');
+ const radDownload=resultPage.waitForEvent('download');await resultPage.getByRole('button',{name:'Download verified result PDF'}).click();const radFile=path.join(out,'verified-radiology.pdf');await(await radDownload).saveAs(radFile);check((await decodePDF(radFile)).every(url=>url===radPublished.url),'rendered radiology PDF QR codes decode to the scan verification page');
+ await guest.close();check(errors.length===0,'booking, reception and result pages have no browser runtime errors');
+ await fs.writeFile(path.join(out,'summary.json'),JSON.stringify({passed,failures:errors},null,2));
+ console.log('QR_BOOKING_CHECKS',passed.length);
+}catch(error){await page.screenshot({path:path.join(out,'failure.png'),fullPage:true});await fs.writeFile(path.join(out,'failure.txt'),String(error.stack));throw error;}finally{await browser.close();}

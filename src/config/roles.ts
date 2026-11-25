@@ -31,7 +31,9 @@ export type LimsPermissionKey =
   | 'canManageBilling'
   | 'canAccessPharmacy'
   | 'canReviewImaging'
-  | 'canNursePatients';
+  | 'canNursePatients'
+  | 'canManageTestCatalogue'
+  | 'canManageTestPrices';
 
 export interface LimsPermissionDescriptor {
   key: LimsPermissionKey;
@@ -41,6 +43,8 @@ export interface LimsPermissionDescriptor {
 }
 
 export const LIMS_PERMISSIONS_CATALOG: LimsPermissionDescriptor[] = [
+  { key: 'canManageTestCatalogue', label: 'Manage test catalogue', description: 'Add, configure, remove and restore tests for the assigned branch.', category: 'Laboratory' },
+  { key: 'canManageTestPrices', label: 'Manage test prices', description: 'Set facility fees or mark tests as requiring a quote.', category: 'Branch Administration' },
   { key: 'canReviewImaging', label: 'Review diagnostic imaging', description: 'Record and approve imaging findings within clinical scope.', category: 'Laboratory' },
   { key: 'canNursePatients', label: 'Nursing and ward care', description: 'Record ward observations and nursing care.', category: 'Clinical & Front Desk' },
   { key: 'canRunRapidLab', label: 'Run 5–10m Rapid Lab Workflow', description: 'Execute rapid diagnostic tests, enter results & run AI analysis', category: 'Laboratory' },
@@ -117,7 +121,7 @@ export const TEKILAB_ROLES: TekiLabRoleDefinition[] = [
     shortLabel: 'Lead Scientist',
     department: 'Laboratory',
     level: 4,
-    defaultView: 'rapid_console',
+    defaultView: 'overview',
     isMultiBranch: false,
     canManageBranchStaff: true,
     description: 'Clinical lead for the branch lab: signs off critical values, oversees QC, and adds lab staff.',

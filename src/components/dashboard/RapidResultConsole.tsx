@@ -1,3 +1,11 @@
+import { ensureResultVerification } from '../../services/qr';
+import { ReportVerificationControls } from './ReportVerificationControls';
+import { TestOrderPicker } from './TestOrderPicker';
+import { TestCatalogueManager } from './TestCatalogueManager';
+import { catalogueCapabilities, catalogueToRapidPanel, displayedPrice, isRapidReady } from '../../lib/test-catalog';
+import { createCatalogueOrder, saveCatalogueRecord } from '../../services/test-catalog';
+import type { CatalogueSnapshot, CatalogueScope } from '../../types/test-catalog';
+import { RAPID_TEST_PANELS, type RapidPanelPreset } from '../../lib/rapid-panels';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { SpecimenCode, downloadSpecimenLabel } from './SpecimenCode';
 import { FindingsEditor } from './FindingsEditor';
@@ -61,6 +69,7 @@ import { handoffLabResultToPharmacyQueue } from '../../lib/cross-module-handoff'
 import { generateLabReportPDF, generateAIReviewPDF } from '../../lib/reporting-utils';
 
 interface RapidResultConsoleProps {
+  catalogueSnapshot: CatalogueSnapshot | null; catalogueScope: CatalogueScope; catalogueError?: string; onRefreshCatalogue: () => void; onCatalogueOrders: (bundle:any)=>void;
   labOrders: LabOrder[];
   labCatalog: LabTestCatalogItem[];
   patients: PatientRecord[];
@@ -72,167 +81,6 @@ interface RapidResultConsoleProps {
 }
 
 type WorkflowStep = 1 | 2 | 3 | 4 | 5;
-
-interface RapidPanelPreset {
-  id: string;
-  code: string;
-  name: string;
-  category: string;
-  sampleType: string;
-  tubeColor: string;
-  targetTatMinutes: number;
-  isQualitative?: boolean;
-  parameters: RapidLabParameter[];
-}
-
-const RAPID_TEST_PANELS: RapidPanelPreset[] = [
-  {
-    id: 'panel-malaria-rdt',
-    code: 'MP-RDT',
-    name: 'Malaria RDT (P. falciparum / Pan)',
-    category: 'Parasitology',
-    sampleType: 'Capillary / Venous Blood',
-    tubeColor: 'Purple (EDTA)',
-    targetTatMinutes: 5,
-    isQualitative: true,
-    parameters: [
-      { name: 'P. falciparum HRP-II Band', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Pan-Malaria pLDH Band', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Control Line (C)', value: 'Valid', unit: 'QC', referenceRange: 'Valid', flag: 'Normal' }
-    ]
-  },
-  {
-    id: 'panel-typhoid-widal',
-    code: 'TYP-RDT',
-    name: 'Typhoid Rapid IgM / Widal',
-    category: 'Serology',
-    sampleType: 'Serum / Whole Blood',
-    tubeColor: 'Red (Plain)',
-    targetTatMinutes: 6,
-    isQualitative: true,
-    parameters: [
-      { name: 'Salmonella Typhi IgM', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Salmonella Typhi O-Titre', value: '1:40', unit: 'Titre', referenceRange: '< 1:80', flag: 'Normal' },
-      { name: 'Salmonella Typhi H-Titre', value: '1:40', unit: 'Titre', referenceRange: '< 1:80', flag: 'Normal' }
-    ]
-  },
-  {
-    id: 'panel-glucose-hba1c',
-    code: 'GLU-A1C',
-    name: 'Blood Glucose & HbA1c Rapid',
-    category: 'Clinical Chemistry',
-    sampleType: 'Fluoride Oxalate Blood',
-    tubeColor: 'Grey (Fl-Ox)',
-    targetTatMinutes: 5,
-    parameters: [
-      { name: 'Fasting Blood Glucose', value: '92', unit: 'mg/dL', referenceRange: '70 - 99', flag: 'Normal' },
-      { name: 'HbA1c', value: '5.3', unit: '%', referenceRange: '4.0 - 5.6', flag: 'Normal' },
-      { name: 'Serum Creatinine (eGFR guard)', value: '0.88', unit: 'mg/dL', referenceRange: '0.60 - 1.20', flag: 'Normal' }
-    ]
-  },
-  {
-    id: 'panel-cbc-rapid',
-    code: 'CBC-5P',
-    name: 'Complete Blood Count (CBC) Rapid',
-    category: 'Haematology',
-    sampleType: 'Venous Blood',
-    tubeColor: 'Purple (EDTA)',
-    targetTatMinutes: 5,
-    parameters: [
-      { name: 'Hemoglobin (Hb)', value: '13.8', unit: 'g/dL', referenceRange: '12.0 - 17.0', flag: 'Normal' },
-      { name: 'White Blood Cell (WBC)', value: '6.8', unit: 'x10^9/L', referenceRange: '4.0 - 11.0', flag: 'Normal' },
-      { name: 'Platelets', value: '245', unit: 'x10^9/L', referenceRange: '150 - 450', flag: 'Normal' },
-      { name: 'Packed Cell Volume (PCV)', value: '41', unit: '%', referenceRange: '36 - 50', flag: 'Normal' }
-    ]
-  },
-  {
-    id: 'panel-lipid',
-    code: 'LIP-4',
-    name: 'Lipid Profile Rapid',
-    category: 'Clinical Chemistry',
-    sampleType: 'Serum',
-    tubeColor: 'Gold (SST)',
-    targetTatMinutes: 7,
-    parameters: [
-      { name: 'Total Cholesterol', value: '182', unit: 'mg/dL', referenceRange: '< 200', flag: 'Normal' },
-      { name: 'LDL Cholesterol', value: '96', unit: 'mg/dL', referenceRange: '< 100', flag: 'Normal' },
-      { name: 'HDL Cholesterol', value: '54', unit: 'mg/dL', referenceRange: '> 40', flag: 'Normal' },
-      { name: 'Triglycerides', value: '128', unit: 'mg/dL', referenceRange: '< 150', flag: 'Normal' }
-    ]
-  },
-  {
-    id: 'panel-urine-10',
-    code: 'URI-10',
-    name: 'Urine Dipstick 10-Param',
-    category: 'Urinalysis',
-    sampleType: 'Midstream Urine',
-    tubeColor: 'Sterile Universal Cup',
-    targetTatMinutes: 5,
-    isQualitative: true,
-    parameters: [
-      { name: 'Leukocyte Esterase', value: 'Negative', unit: 'Dipstick', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Nitrite', value: 'Negative', unit: 'Dipstick', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Urine Protein', value: 'Negative', unit: 'Dipstick', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Urine Glucose', value: 'Negative', unit: 'Dipstick', referenceRange: 'Negative', flag: 'Negative' }
-    ]
-  },
-  {
-    id: 'panel-covid-flu',
-    code: 'RESP-3',
-    name: 'COVID-19 / Flu A+B Rapid Swab',
-    category: 'Virology',
-    sampleType: 'Nasopharyngeal Swab',
-    tubeColor: 'Viral Transport Buffer',
-    targetTatMinutes: 8,
-    isQualitative: true,
-    parameters: [
-      { name: 'SARS-CoV-2 Antigen', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Influenza A Antigen', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Influenza B Antigen', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' }
-    ]
-  },
-  {
-    id: 'panel-hep-bc',
-    code: 'HEP-BC',
-    name: 'Hepatitis B (HBsAg) & C Rapid',
-    category: 'Serology',
-    sampleType: 'Serum / Plasma',
-    tubeColor: 'Red (Plain)',
-    targetTatMinutes: 6,
-    isQualitative: true,
-    parameters: [
-      { name: 'HBsAg Rapid', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' },
-      { name: 'Anti-HCV Rapid', value: 'Negative', unit: 'Qualitative', referenceRange: 'Negative', flag: 'Negative' }
-    ]
-  },
-  {
-    id: 'panel-pregnancy',
-    code: 'BHCG',
-    name: 'Pregnancy β-hCG Rapid',
-    category: 'Immunoassay',
-    sampleType: 'Urine / Serum',
-    tubeColor: 'Sterile Cup / SST',
-    targetTatMinutes: 5,
-    isQualitative: true,
-    parameters: [
-      { name: 'Qualitative β-hCG', value: 'Negative', unit: 'mIU/mL', referenceRange: 'Negative (<5)', flag: 'Negative' }
-    ]
-  },
-  {
-    id: 'panel-sti',
-    code: 'STI-3',
-    name: 'STI Rapid Screening (HIV / Syphilis)',
-    category: 'Serology',
-    sampleType: 'Whole Blood / Serum',
-    tubeColor: 'Purple (EDTA)',
-    targetTatMinutes: 8,
-    isQualitative: true,
-    parameters: [
-      { name: 'HIV 1/2 Antibody', value: 'Negative', unit: 'Qualitative', referenceRange: 'Non-Reactive', flag: 'Negative' },
-      { name: 'Syphilis (Treponema pallidum)', value: 'Negative', unit: 'Qualitative', referenceRange: 'Non-Reactive', flag: 'Negative' }
-    ]
-  }
-];
 
 const STEPS: { num: WorkflowStep; label: string; sub: string }[] = [
   { num: 1, label: 'Patient', sub: '30–60s' },
@@ -322,6 +170,7 @@ function SampleScannerModal({
 }
 
 export function RapidResultConsole({
+  catalogueSnapshot, catalogueScope, catalogueError, onRefreshCatalogue, onCatalogueOrders,
   labOrders,
   patients,
   onUpdateLabOrder,
@@ -340,8 +189,11 @@ export function RapidResultConsole({
   const [workflowStartedAt, setWorkflowStartedAt] = useState(() => Date.now());
   const [quotedFee, setQuotedFee] = useState('');
   const [timerActive, setTimerActive] = useState<boolean>(true);
-  const [panelViewMode, setPanelViewMode] = useState<'list' | 'grid'>('list');
-  const [panelSearch, setPanelSearch] = useState<string>('');
+  const [selectedIds,setSelectedIds]=useState<string[]>([RAPID_TEST_PANELS[0].id]);
+  const [managerOpen,setManagerOpen]=useState(false);
+  const [ordering,setOrdering]=useState(false);
+  const orderRequest=useRef(crypto.randomUUID());
+  const caps=catalogueCapabilities(currentUser);
   const [orderSource, setOrderSource] = useState<'WALK_IN' | 'ONLINE'>('WALK_IN');
   const [whatsappWarningMsg, setWhatsappWarningMsg] = useState<string | null>(null);
 
@@ -353,6 +205,7 @@ export function RapidResultConsole({
   const [patientGender, setPatientGender] = useState<'Male' | 'Female'>('Male');
   const [patientPhone, setPatientPhone] = useState('');
   const [patientAllergies, setPatientAllergies] = useState('');
+  const [panelLabel,setPanelLabel]=useState(RAPID_TEST_PANELS[0].name);
   const [selectedPanelId, setSelectedPanelId] = useState<string>(RAPID_TEST_PANELS[0].id);
 
   // Step 2: Sample & Custody
@@ -382,7 +235,7 @@ export function RapidResultConsole({
   const [isApproved, setIsApproved] = useState<boolean>(false);
   const [findingsHtml, setFindingsHtml] = useState('');
   const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
-  const reportSnapshot = JSON.stringify({ sampleUid, selectedPatientId, patientName, patientPhone, selectedPanelId, parameters, custodyVerified, approvalNotes, findingsHtml, aiReport, quotedFee });
+  const reportSnapshot = JSON.stringify({ sampleUid, selectedPatientId, patientName, patientPhone, selectedPanelId, testId:selectedPanelId, testName:panelLabel, parameters, custodyVerified, approvalNotes, findingsHtml, aiReport, quotedFee });
   const critical = parameters.some(p => p.flag === 'Critical');
   useEffect(() => { setIsApproved(false); setApprovalMode(null); }, [reportSnapshot]);
   const [approvalMode, setApprovalMode] = useState<'AUTO_VERIFIED' | 'PATHOLOGIST_SIGNED' | null>(null);
@@ -413,10 +266,15 @@ export function RapidResultConsole({
     }
   });
 
-  const selectedPanel = useMemo(
-    () => RAPID_TEST_PANELS.find((p) => p.id === selectedPanelId) || RAPID_TEST_PANELS[0],
-    [selectedPanelId]
-  );
+  const [frozenPanel,setFrozenPanel]=useState<RapidPanelPreset|null>(null);
+  const selectedItem=catalogueSnapshot?.items.find(item=>item.id===selectedIds[0]);
+  const rapidSelection=selectedIds.length===1 && Boolean(selectedItem && isRapidReady(selectedItem));
+  const selectedPanel=frozenPanel || (selectedItem&&isRapidReady(selectedItem)?catalogueToRapidPanel(selectedItem):RAPID_TEST_PANELS.find(p=>p.id===selectedPanelId)||RAPID_TEST_PANELS[0]);
+  const selectTests=(ids:string[])=>{
+    setSelectedIds(ids);setFrozenPanel(null);orderRequest.current=crypto.randomUUID();
+    const item=catalogueSnapshot?.items.find(test=>test.id===ids[0]);
+    if(item){setQuotedFee(displayedPrice(item)===null?'':String(displayedPrice(item)));if(isRapidReady(item))handleSelectPanel(catalogueToRapidPanel(item));}
+  };
 
   // Live SLA elapsed timer
   useEffect(() => {
@@ -469,7 +327,7 @@ export function RapidResultConsole({
   };
 
   const handleSelectPanel = (panel: RapidPanelPreset) => {
-    setSelectedPanelId(panel.id);
+    setSelectedPanelId(panel.id);setPanelLabel(panel.name);
     setSampleType(panel.sampleType);
     setTubeColor(panel.tubeColor);
     setParameters(panel.parameters.map((p) => ({ ...p, value: '' })));
@@ -479,7 +337,9 @@ export function RapidResultConsole({
   };
 
   // Step 1 -> Step 2
-  const handleCompleteRegistration = () => {
+  const handleCompleteRegistration = async () => {
+    if(ordering)return;
+    if(!catalogueSnapshot || !selectedIds.length){toast.error("Load the catalogue and select a test first.");return;}
     if (!patientName.trim()) {
       toast.error('Enter patient full name or select an existing patient.');
       return;
@@ -500,7 +360,7 @@ export function RapidResultConsole({
 
     let pid = selectedPatientId;
     if (!pid) {
-      pid = `pat-${Date.now()}`;
+      pid = `pat-${crypto.randomUUID()}`;
       setSelectedPatientId(pid);
       onRegisterPatient?.({
         id: pid,
@@ -508,7 +368,7 @@ export function RapidResultConsole({
         fullName: patientName.trim(),
         phone: patientPhone.trim(),
         gender: patientGender,
-        dob: `${new Date().getFullYear() - (Number(patientAge) || 30)}-01-01`,
+        dob: patientAge.trim() ? `${new Date().getFullYear() - Number(patientAge)}-01-01` : undefined,
         allergies: patientAllergies
           .split(',')
           .map((s) => s.trim())
@@ -518,6 +378,13 @@ export function RapidResultConsole({
       } as any);
     }
 
+    if(!rapidSelection){
+      setOrdering(true);
+      try{const bundle=await createCatalogueOrder(catalogueScope,currentUser,catalogueSnapshot.revision,selectedIds,{id:pid,fullName:patientName.trim(),phone:patientPhone,mrn:patients.find(p=>p.id===pid)?.mrn||pid},orderRequest.current);
+        onCatalogueOrders(bundle);toast.success(bundle.orders.length+' tests ordered');orderRequest.current=crypto.randomUUID();onNavigate?.(bundle.orders.every((o:any)=>o.department==='Radiology')?'radiology':'lab');
+      }catch(error:any){toast.error(error.message);onRefreshCatalogue();}finally{setOrdering(false);}return;
+    }
+    setFrozenPanel(selectedPanel);
     toast.success(`Express Accession Created: ${uid}`, {
       description: `${patientName.trim()} — ${selectedPanel.name}`
     });
@@ -667,12 +534,7 @@ export function RapidResultConsole({
 
       setTimerActive(false);
       setWhatsappWarningMsg(json.whatsappWarning || null);
-      setDispatchResult({
-        pdfReportNumber: json.pdfReportNumber,
-        whatsappUrl: json.whatsappUrl,
-        slaMet: json.slaMet,
-        turnaroundSeconds: Math.max(elapsedSeconds, 1)
-      });
+
 
       if (json.whatsappWarning) {
         toast.warning('WhatsApp Delivery Notice', {
@@ -687,8 +549,8 @@ export function RapidResultConsole({
         mappedResults[p.name] = { value: p.value, unit: p.unit, referenceRange: p.referenceRange, flag: p.flag };
       });
 
-      onUpdateLabOrder({
-        id: json.record?.id || `lab-${Date.now()}`,
+      const releasedOrder = {
+        id: 'rapid-'+sampleUid,
         accessionNumber: sampleUid,
         patientId: selectedPatientId || 'walk-in',
         patientName: patientName || 'Walk-in Patient',
@@ -701,9 +563,9 @@ export function RapidResultConsole({
         orderStatus: 'RELEASED',
         results: mappedResults,
         likelyIssue: aiReport?.likelyDiagnosis || 'Professional review completed',
-        clinicalInterpretation: approvalNotes || aiReport?.clinicalSummary || '',
+        clinicalInterpretation: approvalNotes,
         validatedByName: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verify' : approvedBy,
-        validatedAt: new Date().toISOString(),
+        validatedAt: reportApproval!.signedAt,
         createdAt: new Date(workflowStartedAt).toISOString(),
         priceNaira: quotedFee.trim() ? Number(quotedFee) : 0,
         pricingStatus: quotedFee.trim() ? 'Quoted' : 'Unquoted',
@@ -711,9 +573,18 @@ export function RapidResultConsole({
         findingsHtml,
         reportApproval: reportApproval!,
         reportNumber: json.pdfReportNumber,
-        releasedAt: new Date().toISOString(),
+        releasedAt: reportApproval!.signedAt,
         patientPhone
-      } as any);
+      } as any;
+      releasedOrder.verification=await ensureResultVerification(releasedOrder,{id:releasedOrder.patientId,fullName:releasedOrder.patientName,mrn:releasedOrder.mrn},'laboratory',catalogueScope,currentUser);
+      const bundle=await saveCatalogueRecord(catalogueScope,currentUser,releasedOrder);
+      onCatalogueOrders(bundle);
+      setDispatchResult({
+        pdfReportNumber: json.pdfReportNumber,
+        whatsappUrl: json.whatsappUrl,
+        slaMet: json.slaMet,
+        turnaroundSeconds: Math.max(elapsedSeconds, 1)
+      });
 
       if (json.record) {
         const nextHistory = [json.record, ...recentDispatches].slice(0, 12);
@@ -739,35 +610,16 @@ export function RapidResultConsole({
       mappedResults[p.name] = { value: p.value, unit: p.unit, referenceRange: p.referenceRange, flag: p.flag };
     });
 
-    generateLabReportPDF(
-      {
-        id: sampleUid,
-        reportApproval,
-        reportNumber: dispatchResult?.pdfReportNumber,
-        accessionNumber: sampleUid,
-        patientName: patientName || 'Walk-in Patient',
-        mrn: selectedPatientId || 'WALK-IN',
-        testName: selectedPanel.name,
-        category: selectedPanel.category,
-        sampleType,
-        orderStatus: 'RELEASED',
-        results: mappedResults,
-        likelyIssue: aiReport?.likelyDiagnosis || 'Professional review completed',
-        clinicalInterpretation: approvalNotes || aiReport?.clinicalSummary || '',
-        validatedByName: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verification' : approvedBy,
-        validatedAt: new Date().toISOString(),
-        createdAt: new Date().toISOString()
-      } as any,
-      patients.find(p => p.id === selectedPatientId),
-      companyLogo
-    );
-    toast.success('Official TekiLab PDF Report downloaded');
+    const saved=labOrders.find(order=>order.accessionNumber===sampleUid&&order.orderStatus==='RELEASED');
+    if(!saved){toast.error('Save the approved report before downloading it.');return;}
+    generateLabReportPDF(saved,patients.find(p=>p.id===saved.patientId),companyLogo).then(()=>toast.success('Official TekiLab PDF report downloaded')).catch(error=>toast.error(error.message));
+
   };
 
   // Direct Diagnostic-to-Pharmacy Handoff (works even when Pharmacy UI is muted!)
   // Start Next Rapid Sample
   const handleResetWorkflow = () => {
-    setStep(1);
+    setStep(1);setFrozenPanel(null);orderRequest.current=crypto.randomUUID();
     setWorkflowStartedAt(Date.now()); setQuotedFee('');
     setFindingsHtml(''); setApprovalNotes(''); setReportApproval(null);
     setSelectedPatientId('');
@@ -790,6 +642,7 @@ export function RapidResultConsole({
 
   return (
     <div className="max-w-6xl mx-auto space-y-6 pb-10 font-sans text-neutral-950">
+      <div className="sticky top-0 z-20 bg-white/95 border-b py-3"><h1 className="text-4xl font-black tracking-tight">New Test</h1></div>
       {/* Minimalist White / Blue / Black Header */}
       <div className="bg-white border border-neutral-200 rounded-xl p-3 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-5 shadow-xs">
         <div className="space-y-1.5">
@@ -799,9 +652,7 @@ export function RapidResultConsole({
             <span className="text-neutral-300">/</span>
             <span className="text-neutral-500 font-mono">{sampleUid}</span>
           </div>
-          <h1 className="text-2xl font-bold tracking-tight text-neutral-950">
-            New Test
-          </h1>
+          <h2 className="font-bold text-xl">Test order and rapid workflow</h2><button type="button" onClick={()=>onNavigate?.('radiology')} className="font-bold text-blue-700 underline">Open Radiology / Scans</button>
           <p className="text-sm text-neutral-500">
             Register a patient, collect a sample, enter results and send the approved report.
           </p>
@@ -809,7 +660,7 @@ export function RapidResultConsole({
 
         <div className="flex flex-wrap items-center gap-3 shrink-0">
           {/* Live SLA Stopwatch */}
-          <div className="px-4 py-2.5 rounded-xl bg-neutral-950 text-white flex items-center gap-3">
+          <div className={rapidSelection || step>1 ? "px-4 py-2.5 rounded-xl bg-neutral-950 text-white flex items-center gap-3":"hidden"}>
             <Clock className={`w-4 h-4 ${isWithinSla ? 'text-blue-400' : 'text-amber-400'}`} />
             <div>
               <div className="text-[10px] uppercase tracking-wider text-neutral-400">Turnaround SLA</div>
@@ -832,7 +683,7 @@ export function RapidResultConsole({
       </div>
 
       {/* Clean 5-Step Progress Stepper */}
-      <div className="bg-white border border-neutral-200 rounded-2xl p-4 shadow-xs">
+      <div className={rapidSelection || step>1 ? "bg-white border border-neutral-200 rounded-2xl p-4 shadow-xs":"hidden"}>
         <div className="grid grid-cols-5 gap-1 sm:gap-2">
           {STEPS.map((s) => {
             const isActive = step === s.num;
@@ -1015,121 +866,14 @@ export function RapidResultConsole({
             </div>
           </div>
 
-          {/* Rapid Panel Picker Card */}
-          <div className="lg:col-span-7 bg-white border border-neutral-200 rounded-2xl p-6 flex flex-col justify-between space-y-5 shadow-xs">
-            <div className="space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <h2 className="text-base font-bold text-neutral-950">Select Rapid Test Panel</h2>
-                  <p className="text-xs text-neutral-500">Clean list view by default — switch to grid anytime</p>
-                </div>
-                <div className="inline-flex items-center p-1 rounded-xl bg-neutral-100 border border-neutral-200 self-start">
-                  <button
-                    type="button"
-                    onClick={() => setPanelViewMode('list')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer ${
-                      panelViewMode === 'list' ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
-                    }`}
-                  >
-                    <List className="w-3.5 h-3.5" />
-                    List
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPanelViewMode('grid')}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer ${
-                      panelViewMode === 'grid' ? 'bg-white text-neutral-950 shadow-xs' : 'text-neutral-500'
-                    }`}
-                  >
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                    Grid
-                  </button>
-                </div>
-              </div>
-
-              <div className="relative">
-                <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <Input
-                  value={panelSearch}
-                  onChange={(e) => setPanelSearch(e.target.value)}
-                  placeholder="Search rapid test panels..."
-                  className="pl-10 h-10 bg-neutral-50 border-neutral-200 rounded-xl text-sm"
-                />
-              </div>
-
-              {panelViewMode === 'list' ? (
-                <div className="border border-neutral-200 rounded-xl divide-y divide-neutral-100 max-h-[340px] overflow-y-auto">
-                  {RAPID_TEST_PANELS.filter((p) =>
-                    !panelSearch.trim() ||
-                    p.name.toLowerCase().includes(panelSearch.toLowerCase()) ||
-                    p.code.toLowerCase().includes(panelSearch.toLowerCase())
-                  ).map((panel) => {
-                    const active = panel.id === selectedPanelId;
-                    return (
-                      <button
-                        key={panel.id}
-                        type="button"
-                        onClick={() => handleSelectPanel(panel)}
-                        className={`w-full px-4 py-3 flex items-center justify-between text-left transition-colors cursor-pointer ${
-                          active ? 'bg-blue-50 text-blue-700 font-bold' : 'bg-white text-neutral-900 hover:bg-neutral-50 font-medium'
-                        }`}
-                      >
-                        <span className="text-sm">{panel.name}</span>
-                        {active ? (
-                          <Check className="w-4 h-4 text-blue-600 shrink-0" />
-                        ) : (
-                          <ChevronRight className="w-4 h-4 text-neutral-300 shrink-0" />
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-[340px] overflow-y-auto">
-                  {RAPID_TEST_PANELS.filter((p) =>
-                    !panelSearch.trim() ||
-                    p.name.toLowerCase().includes(panelSearch.toLowerCase()) ||
-                    p.code.toLowerCase().includes(panelSearch.toLowerCase())
-                  ).map((panel) => {
-                    const active = panel.id === selectedPanelId;
-                    return (
-                      <button
-                        key={panel.id}
-                        type="button"
-                        onClick={() => handleSelectPanel(panel)}
-                        className={`p-3.5 rounded-xl border text-left transition-all cursor-pointer flex flex-wrap items-center justify-between gap-2 ${
-                          active
-                            ? 'bg-blue-50/70 border-blue-600 text-blue-700 font-bold'
-                            : 'bg-white border-neutral-200 text-neutral-900 hover:border-neutral-400 font-medium'
-                        }`}
-                      >
-                        <span className="text-sm leading-snug">{panel.name}</span>
-                        {active && <Check className="w-4 h-4 text-blue-600 shrink-0" />}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-xs font-semibold text-neutral-700">Quoted test fee (NGN, optional)</label>
-              <Input aria-label="Quoted test fee" type="number" min="0" step="0.01" value={quotedFee} onChange={e => setQuotedFee(e.target.value)} placeholder="Leave blank until the fee is confirmed" />
-              <p className="text-xs text-neutral-500">A confirmed quote creates an unpaid charge when the report is saved. Unquoted tests remain pending pricing.</p>
-            </div>
-            <div className="pt-4 border-t border-neutral-100 flex items-center justify-between gap-4">
-              <div className="text-xs text-neutral-500">
-                Selected: <span className="font-semibold text-neutral-950">{selectedPanel.name}</span>
-              </div>
-              <Button
-                onClick={handleCompleteRegistration}
-                className="h-11 px-6 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold"
-              >
-                Register &amp; Generate Sample UID
-                <ArrowRight className="w-4 h-4 ml-2" />
-              </Button>
-            </div>
+          <div className="lg:col-span-7 bg-white border rounded-2xl p-4 sm:p-6 space-y-4">
+            <TestOrderPicker items={catalogueSnapshot?.items||[]} selectedIds={selectedIds} onChange={selectTests} onManage={()=>setManagerOpen(true)} canManage={caps.manageTests||caps.managePrices} error={catalogueError} onRetry={onRefreshCatalogue}/>
+            {rapidSelection && <div><label className="text-xs font-semibold">Quoted test fee (NGN, optional)</label><Input aria-label="Quoted test fee" type="number" min="0" step="0.01" disabled={!caps.managePrices} value={quotedFee} onChange={e=>setQuotedFee(e.target.value)}/></div>}
+            <p className="text-xs text-slate-500">Published fees are reference prices. Confirm availability, method and facility fee before collection. Only reviewed rapid templates use the rapid result steps; other tests go to the laboratory worklist.</p>
+            <Button disabled={ordering||!catalogueSnapshot||!selectedIds.length} onClick={handleCompleteRegistration}>{ordering?'Saving…':rapidSelection?'Register & Generate Sample UID':'Place test order'}</Button>
           </div>
+          {catalogueSnapshot && <TestCatalogueManager open={managerOpen} onClose={()=>setManagerOpen(false)} snapshot={catalogueSnapshot} scope={catalogueScope} actor={currentUser} onRefresh={onRefreshCatalogue}/>}
+
         </div>
       )}
 

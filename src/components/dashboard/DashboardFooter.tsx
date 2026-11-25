@@ -3,10 +3,11 @@ import { ShieldCheck } from 'lucide-react';
 
 export function DashboardFooter({
   logoUrl,
-  companyName
+  companyName, onInstallApp, isInstalled
 }: {
   logoUrl?: string;
   companyName?: string;
+  onInstallApp?: () => void; isInstalled?: boolean;
 } = {}) {
   return (
     <footer className="w-full bg-white px-4 md:px-8 py-2.5 shrink-0 select-none border-t border-slate-200/80">
@@ -34,7 +35,7 @@ export function DashboardFooter({
 
         <div className="flex flex-col items-center sm:items-end">
           <p className="text-[11px] text-slate-500 leading-none font-medium">© 2026 Teki Med • Unified Healthcare Management Platform</p>
-          <div className="flex gap-3 mt-1">
+          <div className="flex gap-3 mt-1">{onInstallApp && !isInstalled && <button onClick={onInstallApp} className="text-xs text-blue-600 font-semibold">Download TekiLab App</button>}
              <a href="#" className="text-[10px] text-slate-400 hover:text-blue-600 transition-colors">Audit Trail</a>
              <a href="#" className="text-[10px] text-slate-400 hover:text-blue-600 transition-colors">Protocol Specs</a>
           </div>

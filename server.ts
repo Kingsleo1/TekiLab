@@ -1,4 +1,6 @@
+import { createQRRouter } from './src/server/qr-router';
 import express from 'express';
+import { createTestCatalogueRouter } from './src/server/test-catalog-router';
 import { createHash } from 'node:crypto';
 import { buildMeasuredReview, validateDispatch } from './src/lib/rapid-review';
 const previewMode = process.env.TEKILAB_PREVIEW_MODE !== 'false';
@@ -512,6 +514,9 @@ async function startServer() {
     next();
   });
   app.use(express.json({ limit: '1mb' }));
+  const catalogueRouter=await createTestCatalogueRouter(__dirname,previewMode);
+  app.use('/api/lims/test-catalog',catalogueRouter);
+  app.use('/api/lims/qr',createQRRouter(__dirname,previewMode,(catalogueRouter as any).catalogueStore));
   app.get('/api/preview/status', (_req, res) => res.json({ previewMode, databaseWrites: !previewMode, externalAI: !previewMode }));
 
   // 1. Check Astra DB Connection Status

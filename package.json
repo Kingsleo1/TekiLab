@@ -10,10 +10,12 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test tests/workflows.test.ts",
+    "test": "tsx --test tests/workflows.test.ts tests/catalogue-qr.test.ts",
     "test:browser": "node tests/browser.mjs",
     "test:api": "node tests/api.mjs",
-    "test:integration": "node tests/integrations.mjs"
+    "test:integration": "node tests/integrations.mjs",
+    "test:qr": "node tests/qr-booking.mjs",
+    "test:management": "node tests/management-imaging.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -44,12 +46,15 @@
     "vite": "^6.2.3"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^1.2.0",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/papaparse": "^5.5.2",
     "@types/qrcode": "^1.5.6",
     "autoprefixer": "^10.4.21",
     "esbuild": "^0.25.0",
+    "jsqr": "^1.4.0",
+    "pdfjs-dist": "^6.5.438",
     "playwright": "^1.65.1",
     "shadcn": "^4.23.0",
     "sharp": "^0.35.4",

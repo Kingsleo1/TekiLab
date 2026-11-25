@@ -1,3 +1,5 @@
+import { ensureResultVerification } from '../../services/qr';
+import { ReportVerificationControls } from './ReportVerificationControls';
 import { useState } from 'react';
 import { FindingsEditor } from './FindingsEditor';
 import { ReportSignature } from './ReportSignature';
@@ -26,6 +28,7 @@ import { generateRadiologyReportPDF } from '../../lib/reporting-utils';
 import { toast } from 'sonner';
 
 interface RadiologyViewProps {
+  onNavigate?:(view:string)=>void;
   imagingOrders: ImagingOrder[];
   imagingCatalog: ImagingTestCatalogItem[];
   patients: PatientRecord[];
@@ -33,13 +36,15 @@ interface RadiologyViewProps {
   currentUser?: any;
 }
 
-export function RadiologyView({
+export function RadiologyView({onNavigate,
   imagingOrders,
   imagingCatalog,
   patients,
   onUpdateImagingOrder,
   currentUser
 }: RadiologyViewProps) {
+  const [scanConfirmed,setScanConfirmed]=useState(false);
+  const [saving,setSaving]=useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedOrder, setSelectedOrder] = useState<ImagingOrder | null>(null);
 
@@ -51,7 +56,7 @@ export function RadiologyView({
   const [isPreviewPdfOpen, setIsPreviewPdfOpen] = useState(false);
   const [findingsHtml, setFindingsHtml] = useState('');
   const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
-  const reportSnapshot = JSON.stringify({ id: selectedOrder?.id, patientId: selectedOrder?.patientId, clinicalIndication, techniqueNotes, findingsNotes, impressionNotes, recommendationsNotes, findingsHtml });
+  const reportSnapshot = JSON.stringify({ id: selectedOrder?.id, patientId: selectedOrder?.patientId, patientName:selectedOrder?.patientName, mrn:selectedOrder?.mrn, testId:selectedOrder?.testId, testName:selectedOrder?.testName, accessionNumber:(selectedOrder as any)?.accessionNumber, clinicalIndication, techniqueNotes, findingsNotes, impressionNotes, recommendationsNotes, findingsHtml });
 
   const filteredOrders = imagingOrders.filter(o => 
     o.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -60,7 +65,7 @@ export function RadiologyView({
   );
 
   const handleSelectOrder = (order: ImagingOrder) => {
-    setSelectedOrder(order);
+    setSelectedOrder(order);setScanConfirmed(false);
     setReportApproval(null);
     setFindingsHtml(order.findingsHtml || textToFindings(order.findingsNotes || ''));
     setClinicalIndication(order.clinicalIndication || '');
@@ -70,8 +75,9 @@ export function RadiologyView({
     setRecommendationsNotes(order.recommendationsNotes || '');
   };
 
-  const handleApproveAndRelease = () => {
+  const handleApproveAndRelease = async () => {
     if (!selectedOrder) return;
+    if(selectedOrder.orderStatus==='Awaiting Scan'){toast.error('Record completion of the scan before approving its report.');return;}
     if (selectedOrder.orderStatus === 'Released' || !canApproveReport(currentUser, false, true) || !approvalMatches(reportApproval, reportSnapshot, currentUser)) { toast.error('An authorized reviewer must sign this specific report before release.'); return; }
 
     if (!findingsNotes.trim() || !impressionNotes.trim() || !(currentUser?.displayName || currentUser?.name)) {
@@ -94,13 +100,20 @@ export function RadiologyView({
       reportNumber: reportNum
     };
 
-    onUpdateImagingOrder(updated);
+    try{(updated as any).verification=await ensureResultVerification(updated,patients.find(p=>p.id===updated.patientId),'radiology');await onUpdateImagingOrder(updated);}catch(error:any){toast.error(error.message);return;}
     setSelectedOrder(updated);
     toast.success(`Diagnostic report approved and officially released! Report #: ${reportNum}`);
   };
 
+  const saveScan=async(status:'Scan Completed'|'Report Preparing')=>{
+    if(!selectedOrder||saving||selectedOrder.orderStatus==='Released')return;
+    if(!canApproveReport(currentUser,false,true)){toast.error('An authorized imaging professional must record this examination.');return;}
+    if(status==='Scan Completed'&&!scanConfirmed)return;
+    setSaving(true);try{const updated={...selectedOrder,orderStatus:status,clinicalIndication,techniqueNotes,findingsNotes,impressionNotes,recommendationsNotes,findingsHtml,...(status==='Scan Completed'?{scanCompletedAt:new Date().toISOString(),scanPerformedBy:currentUser.id}:{})};await onUpdateImagingOrder(updated);setSelectedOrder(updated);toast.success(status==='Scan Completed'?'Scan completion recorded.':'Report draft saved.');}catch(error:any){toast.error(error.message);}finally{setSaving(false);}
+  };
   return (
     <div className="space-y-6">
+      <div className="flex flex-wrap gap-3"><Button onClick={()=>onNavigate?.('rapid_console')}>Order a scan / view scan catalogue</Button><Button variant="outline" onClick={()=>onNavigate?.('billing')}>Scan payments &amp; billing</Button><Button variant="outline" onClick={()=>onNavigate?.('lab')}>Laboratory worklist</Button></div>
       <header className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border bg-card px-4 py-4 sm:px-6">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Radiology</h1>
@@ -187,12 +200,12 @@ export function RadiologyView({
               <CardContent className="p-6 space-y-4 text-xs">
                 <div>
                   <label className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Reason for Scan</label>
-                  <Input value={clinicalIndication} onChange={(e) => setClinicalIndication(e.target.value)} placeholder="Reason for imaging examination..." />
+                  <Input readOnly={selectedOrder.orderStatus==='Released'} value={clinicalIndication} onChange={(e) => setClinicalIndication(e.target.value)} placeholder="Reason for imaging examination..." />
                 </div>
 
                 <div>
                   <label className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Technique Notes</label>
-                  <Input value={techniqueNotes} onChange={(e) => setTechniqueNotes(e.target.value)} placeholder="Radiographic projection or ultrasound probe parameters..." />
+                  <Input readOnly={selectedOrder.orderStatus==='Released'} value={techniqueNotes} onChange={(e) => setTechniqueNotes(e.target.value)} placeholder="Radiographic projection or ultrasound probe parameters..." />
                 </div>
 
                 <div>
@@ -202,14 +215,16 @@ export function RadiologyView({
 
                 <div>
                   <label className="font-semibold text-slate-800 dark:text-slate-200 block mb-1">Impression / Conclusion *</label>
-                  <textarea 
+                  <textarea readOnly={selectedOrder.orderStatus==='Released'}
                     className="w-full min-h-[60px] p-3 rounded-lg border border-input bg-background text-xs font-semibold"
                     placeholder="Final radiological diagnostic summary..."
                     value={impressionNotes}
                     onChange={(e) => setImpressionNotes(e.target.value)}
                   />
                 </div>
-                {selectedOrder.orderStatus !== 'Released' && <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, false, true) && Boolean(findingsNotes.trim() && impressionNotes.trim())} onApprove={setReportApproval} />}
+                <ReportVerificationControls order={selectedOrder} patient={patients.find(p=>p.id===selectedOrder.patientId)} kind="radiology"/>
+                {selectedOrder.orderStatus!=='Released'&&<div className="border rounded-lg p-3 space-y-2">{selectedOrder.orderStatus==='Awaiting Scan'?<><label className="flex gap-2 text-sm"><input type="checkbox" checked={scanConfirmed} onChange={e=>setScanConfirmed(e.target.checked)}/>I confirm this patient's requested scan has been performed</label><Button disabled={!scanConfirmed||saving} onClick={()=>saveScan('Scan Completed')}>Record scan completed</Button></>:<Button disabled={saving} variant="outline" onClick={()=>saveScan('Report Preparing')}>Save imaging draft</Button>}</div>}
+                {selectedOrder.orderStatus !== 'Released' && <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={selectedOrder.orderStatus!=='Awaiting Scan' && canApproveReport(currentUser, false, true) && Boolean(findingsNotes.trim() && impressionNotes.trim())} onApprove={setReportApproval} />}
               </CardContent>
             </Card>
           ) : (
