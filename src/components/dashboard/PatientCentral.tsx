@@ -1,21 +1,16 @@
 import React, { useState, useMemo } from 'react';
 import {
   UserPlus,
+  Eye, Pencil, Trash2, Users,
   Search,
-  List,
-  LayoutGrid,
-  ChevronRight,
   Phone,
   Calendar,
-  Activity,
+  Clock,
   FlaskConical,
   Stethoscope,
   Send,
   ShieldAlert,
-  CheckCircle2,
-  Clock,
-  FileText,
-  X
+  FileText
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -44,6 +39,10 @@ import { toast } from 'sonner';
 interface PatientCentralProps {
   patients: PatientRecord[];
   onAddPatient: (patient: PatientRecord) => void;
+  onUpdatePatient?: (patient: PatientRecord) => void;
+  onDeletePatient?: (patient: PatientRecord) => boolean;
+  canManage?: boolean;
+  queueTickets?: {patientId?: string}[];
   encounters?: ClinicalEncounter[];
   labOrders?: LabOrder[];
   imagingOrders?: ImagingOrder[];
@@ -56,6 +55,7 @@ interface PatientCentralProps {
 export function PatientCentral({
   patients,
   onAddPatient,
+  onUpdatePatient, onDeletePatient, canManage = false, queueTickets = [],
   encounters = [],
   labOrders = [],
   imagingOrders = [],
@@ -67,7 +67,10 @@ export function PatientCentral({
   const { notifyTransfer } = useNotifications();
 
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  const [page, setPage] = useState(1);
+  const [editingPatient, setEditingPatient] = useState<PatientRecord | null>(null);
+  const [deletePatient, setDeletePatient] = useState<PatientRecord | null>(null);
+  const hasHistory = (patient: PatientRecord) => [...encounters, ...labOrders, ...imagingOrders, ...charges, ...queueTickets].some(record => record.patientId === patient.id || (!record.patientId && 'patientName' in record && record.patientName === patient.fullName));
   const [selectedPatient, setSelectedPatient] = useState<PatientRecord | null>(null);
   const [detailTab, setDetailTab] = useState<'overview' | 'logs' | 'transfer'>('overview');
 
@@ -75,12 +78,20 @@ export function PatientCentral({
   const [isRegisterOpen, setIsRegisterOpen] = useState(false);
   const [fullName, setFullName] = useState('');
   const [phone, setPhone] = useState('');
-  const [gender, setGender] = useState<'Male' | 'Female'>('Male');
-  const [dob, setDob] = useState('1992-05-14');
-  const [bloodGroup, setBloodGroup] = useState('O+');
+  const [gender, setGender] = useState<PatientRecord['sex']>('Male');
+  const [dob, setDob] = useState('');
+  const [bloodGroup, setBloodGroup] = useState('');
   const [allergiesText, setAllergiesText] = useState('');
   const [chronicText, setChronicText] = useState('');
   const [address, setAddress] = useState('');
+  const [email, setEmail] = useState('');
+  const openEditor = (patient: PatientRecord | null) => {
+    setEditingPatient(patient); setFullName(patient?.fullName || ''); setPhone(patient?.phone || '');
+    setGender(patient?.sex || (patient as any)?.gender || 'Male'); setDob(patient?.dob || '');
+    setBloodGroup(patient?.bloodGroup || ''); setAddress(patient?.address || ''); setEmail(patient?.email || '');
+    setAllergiesText(patient?.allergies?.join(', ') || ''); setChronicText(patient?.chronicConditions?.join(', ') || '');
+    setIsRegisterOpen(true);
+  };
 
   // Transfer Department form inside Detail Modal
   const [transferDept, setTransferDept] = useState<TekiLabDepartment>('Laboratory');
@@ -93,7 +104,7 @@ export function PatientCentral({
       (p) =>
         p.fullName?.toLowerCase().includes(q) ||
         p.mrn?.toLowerCase().includes(q) ||
-        p.phone?.toLowerCase().includes(q)
+        p.phone?.toLowerCase().includes(q) || p.email?.toLowerCase().includes(q)
     );
   }, [patients, searchTerm]);
 
@@ -112,7 +123,7 @@ export function PatientCentral({
     }[] = [];
 
     labOrders
-      .filter((l) => l.patientId === selectedPatient.id || l.patientName === selectedPatient.fullName)
+      .filter((l) => l.patientId === selectedPatient.id || (!l.patientId && l.patientName === selectedPatient.fullName))
       .forEach((l) => {
         logs.push({
           id: l.id,
@@ -173,16 +184,21 @@ export function PatientCentral({
       return;
     }
 
+    if (!canManage) return;
+    if (dob && dob > new Date().toISOString().slice(0, 10)) { toast.error("Date of birth cannot be in the future."); return; }
     const norm = normalizeNigerianWhatsAppPhone(phone);
     const newPatient: PatientRecord = {
-      id: `pat-${Date.now()}`,
-      mrn: `TK-PAT-${Math.floor(10000 + Math.random() * 89999)}`,
+      ...editingPatient,
+      id: editingPatient?.id || `pat-${crypto.randomUUID()}`,
+      mrn: editingPatient?.mrn || `TK-PAT-${crypto.randomUUID().slice(0, 8).toUpperCase()}`,
       fullName: fullName.trim(),
-      phone: norm.e164 || phone.trim() || '+2348030000000',
+      phone: norm.e164 || phone.trim(),
+      sex: gender,
       gender,
       dob,
       bloodGroup,
-      address: address.trim() || 'Lagos, Nigeria',
+      address: address.trim(),
+      email: email.trim(),
       allergies: allergiesText
         .split(',')
         .map((s) => s.trim())
@@ -191,17 +207,18 @@ export function PatientCentral({
         .split(',')
         .map((s) => s.trim())
         .filter(Boolean),
-      createdAt: new Date().toISOString()
+      registeredAt: editingPatient?.registeredAt || (editingPatient as any)?.createdAt || new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     } as any;
 
-    onAddPatient(newPatient);
+    if (editingPatient) onUpdatePatient?.(newPatient); else onAddPatient(newPatient);
     setIsRegisterOpen(false);
     setFullName('');
     setPhone('');
     setAllergiesText('');
     setChronicText('');
     setAddress('');
-    toast.success(`Registered ${newPatient.fullName}`, {
+    toast.success(`${editingPatient ? 'Updated' : 'Registered'} ${newPatient.fullName}`, {
       description: norm.isWhatsAppQualified
         ? `WhatsApp Auto-Qualified (${norm.display})`
         : `MRN: ${newPatient.mrn}`
@@ -233,102 +250,45 @@ export function PatientCentral({
             Registered Patients
           </h1>
           <p className="text-sm text-neutral-500 mt-0.5">
-            {patients.length} registered patients · Click any name to inspect full profile &amp; medical history logs.
+            Manage patient profiles, contact details and clinical history in one place.
           </p>
         </div>
-        <Button
-          onClick={() => setIsRegisterOpen(true)}
+        {canManage && <Button
+          onClick={() => openEditor(null)}
           className="h-10 px-5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-semibold shrink-0"
         >
           <UserPlus className="w-4 h-4 mr-2" />
           Register Patient
-        </Button>
+        </Button>}
       </div>
 
-      {/* Search Bar & List/Grid Toggle */}
-      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-        <div className="relative flex-1">
-          <Search className="w-4 h-4 text-neutral-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <Input
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search registered patients by name, MRN, or phone..."
-            className="pl-10 h-11 bg-white border-neutral-200 rounded-xl text-sm"
-          />
-        </div>
-
-        <div className="inline-flex items-center p-1 rounded-xl bg-neutral-100 border border-neutral-200 self-end sm:self-auto">
-          <button
-            type="button"
-            onClick={() => setViewMode('list')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
-              viewMode === 'list'
-                ? 'bg-white text-neutral-950 shadow-xs'
-                : 'text-neutral-500 hover:text-neutral-900'
-            }`}
-          >
-            <List className="w-3.5 h-3.5" />
-            List
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode('grid')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
-              viewMode === 'grid'
-                ? 'bg-white text-neutral-950 shadow-xs'
-                : 'text-neutral-500 hover:text-neutral-900'
-            }`}
-          >
-            <LayoutGrid className="w-3.5 h-3.5" />
-            Grid
-          </button>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-label="Patient registry summary">
+        {[['Registered patients', patients.length, 'bg-blue-50 text-blue-700'], ['With contact details', patients.filter(p => p.phone || p.email).length, 'bg-emerald-50 text-emerald-700'], ['Matching your search', filteredPatients.length, 'bg-violet-50 text-violet-700']].map(([label,count,color]) => <div key={String(label)} className="bg-white rounded-xl border border-neutral-200 p-4 flex items-center gap-3"><div className={String(color)+' rounded-xl p-3'}><Users className="w-5 h-5" /></div><div><p className="text-xs text-neutral-500">{label}</p><p className="text-2xl font-bold">{count}</p></div></div>)}
       </div>
-
-      {/* Clean List View (Default: Just Name) OR Optional Grid View */}
-      {filteredPatients.length === 0 ? (
-        <div className="bg-white border border-dashed border-neutral-200 rounded-2xl py-16 text-center text-sm text-neutral-400">
-          No patients matched "{searchTerm}".
+      <section className="bg-white border border-neutral-200 rounded-2xl shadow-sm overflow-hidden" aria-label="Patient directory">
+        <div className="p-4 border-b border-neutral-100 flex flex-col sm:flex-row gap-3 sm:items-center justify-between">
+          <div><h2 className="font-semibold">Patient directory</h2><p className="text-xs text-neutral-500">View a profile or update registration details.</p></div>
+          <div className="relative sm:w-96"><Search className="w-4 h-4 absolute left-3 top-3 text-neutral-400" /><Input aria-label="Search patients" value={searchTerm} onChange={e => {setSearchTerm(e.target.value);setPage(1);}} placeholder="Search name, patient ID, phone or email" className="pl-9" /></div>
         </div>
-      ) : viewMode === 'list' ? (
-        <div className="bg-white border border-neutral-200 rounded-2xl divide-y divide-neutral-100 overflow-hidden shadow-xs">
-          {filteredPatients.map((patient) => (
-            <button
-              key={patient.id}
-              type="button"
-              onClick={() => {
-                setSelectedPatient(patient);
-                setDetailTab('overview');
-              }}
-              className="w-full px-5 py-4 flex items-center justify-between text-left hover:bg-blue-50/40 transition-colors cursor-pointer group"
-            >
-              <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700 transition-colors">
-                {patient.fullName}
-              </span>
-              <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600 transition-colors" />
-            </button>
-          ))}
+        <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Scrollable patient table">
+          <table className="w-full min-w-[850px] text-sm text-left">
+            <caption className="sr-only">Registered patients and profile actions</caption>
+            <thead className="bg-neutral-50 text-xs text-neutral-500"><tr>{['Patient / ID','Contact','Sex / Date of birth','Registered','Actions'].map(title => <th key={title} scope="col" className="px-5 py-3 font-semibold">{title}</th>)}</tr></thead>
+            <tbody className="divide-y divide-neutral-100">{filteredPatients.slice((Math.min(page, Math.max(1,Math.ceil(filteredPatients.length/20)))-1)*20,Math.min(page, Math.max(1,Math.ceil(filteredPatients.length/20)))*20).map(patient => <tr key={patient.id} className="hover:bg-blue-50/30">
+              <td className="px-5 py-4"><button type="button" onClick={() => {setSelectedPatient(patient);setDetailTab('overview');}} className="font-semibold text-neutral-900 hover:text-blue-700 text-left">{patient.fullName}</button><p className="text-xs font-mono text-neutral-500 mt-1">{patient.mrn}</p></td>
+              <td className="px-5 py-4"><p>{patient.phone || 'No phone recorded'}</p><p className="text-xs text-neutral-500 mt-1">{patient.email || 'No email recorded'}</p></td>
+              <td className="px-5 py-4"><p>{patient.sex || (patient as any).gender || 'Not recorded'}</p><p className="text-xs text-neutral-500 mt-1">{patient.dob || 'Date not recorded'}</p></td>
+              <td className="px-5 py-4 text-xs text-neutral-600">{(patient.registeredAt || (patient as any).createdAt || '').slice(0,10) || 'Not recorded'}</td>
+              <td className="px-5 py-4"><div className="flex gap-1.5">
+                <Button size="sm" variant="outline" aria-label={'View '+patient.fullName} onClick={() => {setSelectedPatient(patient);setDetailTab('overview');}}><Eye className="w-3.5 h-3.5 mr-1" />View</Button>
+                {canManage && <><Button size="sm" variant="outline" aria-label={'Edit '+patient.fullName} onClick={() => openEditor(patient)}><Pencil className="w-3.5 h-3.5 mr-1" />Edit</Button><Button size="sm" variant="outline" className="text-red-600 hover:bg-red-50" aria-label={'Delete '+patient.fullName} onClick={() => setDeletePatient(patient)}><Trash2 className="w-3.5 h-3.5 mr-1" />Delete</Button></>}
+              </div></td>
+            </tr>)}{!filteredPatients.length && <tr><td colSpan={5} className="text-center py-14 text-neutral-500">{searchTerm ? 'No patients match your search. Try a name, ID or contact detail.' : 'No registered patients yet. Register a patient to get started.'}</td></tr>}</tbody>
+          </table>
         </div>
-      ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filteredPatients.map((patient) => (
-            <button
-              key={patient.id}
-              type="button"
-              onClick={() => {
-                setSelectedPatient(patient);
-                setDetailTab('overview');
-              }}
-              className="p-4 bg-white border border-neutral-200 rounded-2xl text-left hover:border-blue-500 hover:shadow-xs transition-all cursor-pointer flex items-center justify-between gap-3 group"
-            >
-              <span className="text-sm font-semibold text-neutral-950 group-hover:text-blue-700 truncate">
-                {patient.fullName}
-              </span>
-              <ChevronRight className="w-4 h-4 text-neutral-300 group-hover:text-blue-600 shrink-0" />
-            </button>
-          ))}
-        </div>
-      )}
+        <div className="p-4 border-t border-neutral-100 flex flex-wrap items-center justify-between gap-3 text-xs text-neutral-500"><span>{filteredPatients.length} patients · Up to 20 per page</span><div className="flex items-center gap-3"><Button size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(p=>p-1)}>Previous</Button><span>Page {Math.min(page,Math.max(1,Math.ceil(filteredPatients.length/20)))} of {Math.max(1,Math.ceil(filteredPatients.length/20))}</span><Button size="sm" variant="outline" disabled={page >= Math.ceil(filteredPatients.length/20)} onClick={() => setPage(p=>p+1)}>Next</Button></div></div>
+      </section>
+      <Dialog open={Boolean(deletePatient)} onOpenChange={open=>!open&&setDeletePatient(null)}><DialogContent className="sm:max-w-md"><DialogHeader><DialogTitle>Delete patient?</DialogTitle><DialogDescription>{deletePatient && hasHistory(deletePatient) ? 'This patient has clinical, queue or billing records and cannot be deleted. Their history and verified results must remain available.' : 'This removes the patient registration. This action cannot be undone.'}</DialogDescription></DialogHeader><p className="font-semibold">{deletePatient?.fullName} · {deletePatient?.mrn}</p><div className="flex justify-end gap-2"><Button variant="outline" onClick={()=>setDeletePatient(null)}>Cancel</Button><Button className="bg-red-600 hover:bg-red-700 text-white" disabled={!canManage || !deletePatient || hasHistory(deletePatient)} onClick={()=>{if(deletePatient && !hasHistory(deletePatient) && onDeletePatient?.(deletePatient)){toast.success('Patient registration deleted');setDeletePatient(null);setPage(1);}}}>Delete patient</Button></div></DialogContent></Dialog>
 
       {/* =================================================================== */}
       {/* FULL PATIENT DETAIL PAGE MODAL (PROFILE + MEDICAL HISTORY LOGS)     */}
@@ -337,6 +297,7 @@ export function PatientCentral({
         <DialogContent className="sm:max-w-3xl bg-white border border-neutral-200 p-0 overflow-hidden rounded-2xl">
           {selectedPatient && (
             <>
+              <DialogHeader className="sr-only"><DialogTitle>Patient profile</DialogTitle><DialogDescription>Patient demographics and clinical history</DialogDescription></DialogHeader>
               <div className="px-6 py-5 border-b border-neutral-100 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div>
                   <div className="flex items-center gap-2 text-xs font-mono text-blue-600 font-semibold">
@@ -430,7 +391,7 @@ export function PatientCentral({
                     <div className="p-4 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1">
                       <div className="text-[11px] font-semibold uppercase text-neutral-400">Address</div>
                       <div className="font-semibold text-neutral-950">
-                        {(selectedPatient as any).address || 'Lagos, Nigeria'}
+                        {(selectedPatient as any).address || 'Not recorded'}
                       </div>
                     </div>
                     <div className="sm:col-span-2 p-4 rounded-xl bg-neutral-50 border border-neutral-100 space-y-1.5">
@@ -532,15 +493,16 @@ export function PatientCentral({
       <Dialog open={isRegisterOpen} onOpenChange={setIsRegisterOpen}>
         <DialogContent className="sm:max-w-lg bg-white border border-neutral-200 rounded-2xl">
           <DialogHeader>
-            <DialogTitle className="text-lg font-bold text-neutral-950">Register New Patient</DialogTitle>
+            <DialogTitle className="text-lg font-bold text-neutral-950">{editingPatient ? 'Edit Patient' : 'Register New Patient'}</DialogTitle>
             <DialogDescription className="text-xs text-neutral-500">
-              Nigerian +234 numbers automatically qualify for instant WhatsApp result delivery.
+              Keep patient details accurate. Result delivery requires a configured provider and patient consent.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleRegisterSubmit} className="space-y-4 pt-2">
             <div>
               <label className="block text-xs font-semibold text-neutral-700 mb-1">Full Name *</label>
               <Input
+                aria-label="Full name"
                 value={fullName}
                 onChange={(e) => setFullName(e.target.value)}
                 placeholder="e.g. Amina Bello"
@@ -565,6 +527,7 @@ export function PatientCentral({
                 )}
               </div>
               <Input
+                aria-label="Phone number"
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
                 placeholder="+234 803 123 4567 or 08031234567"
@@ -572,29 +535,32 @@ export function PatientCentral({
               />
             </div>
 
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 mb-1">Gender</label>
                 <select
+                  aria-label="Sex"
                   value={gender}
                   onChange={(e) => setGender(e.target.value as any)}
                   className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-sm bg-white"
                 >
                   <option value="Male">Male</option>
-                  <option value="Female">Female</option>
+                  <option value="Female">Female</option><option value="Other">Other</option>
                 </select>
               </div>
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 mb-1">Date of Birth</label>
-                <Input type="date" value={dob} onChange={(e) => setDob(e.target.value)} className="h-10 rounded-xl border-neutral-200" />
+                <Input aria-label="Date of birth" max={new Date().toISOString().slice(0,10)} type="date" value={dob} onChange={(e) => setDob(e.target.value)} className="h-10 rounded-xl border-neutral-200" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 mb-1">Blood Group</label>
                 <select
+                  aria-label="Blood group"
                   value={bloodGroup}
                   onChange={(e) => setBloodGroup(e.target.value)}
                   className="w-full h-10 px-3 rounded-xl border border-neutral-200 text-sm bg-white"
                 >
+                  <option value="">Not recorded</option>
                   {['O+', 'O-', 'A+', 'A-', 'B+', 'B-', 'AB+', 'AB-'].map((bg) => (
                     <option key={bg} value={bg}>{bg}</option>
                   ))}
@@ -623,6 +589,8 @@ export function PatientCentral({
               </div>
             </div>
 
+            <div><label className="block text-xs font-semibold mb-1" htmlFor="patient-email">Email</label><Input id="patient-email" type="email" value={email} onChange={e=>setEmail(e.target.value)} /></div>
+            <div><label className="block text-xs font-semibold mb-1" htmlFor="patient-address">Address</label><Input id="patient-address" value={address} onChange={e=>setAddress(e.target.value)} /></div>
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="outline" onClick={() => setIsRegisterOpen(false)} className="rounded-xl">
                 Cancel

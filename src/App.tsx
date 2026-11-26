@@ -1483,6 +1483,19 @@ function AppShell() {
                             setPatients(newArr);
                             localStorage.setItem('tm_patients', JSON.stringify(newArr));
                           }}
+                          canManage={activeRoleDef.permissions.includes('canManagePatients') || (currentUser?.permissions || []).includes('canManagePatients')}
+                          queueTickets={queueTickets}
+                          onUpdatePatient={(patient) => {
+                            if (!activeRoleDef.permissions.includes('canManagePatients') && !(currentUser?.permissions || []).includes('canManagePatients')) return;
+                            setPatients(previous => { const next = previous.map(p => p.id === patient.id ? patient : p); localStorage.setItem('tm_patients', JSON.stringify(next)); return next; });
+                          }}
+                          onDeletePatient={(patient) => {
+                            if (!activeRoleDef.permissions.includes('canManagePatients') && !(currentUser?.permissions || []).includes('canManagePatients')) return false;
+                            const linked = [...encounters, ...labOrders, ...imagingOrders, ...charges, ...queueTickets].some(record => record.patientId === patient.id || (!record.patientId && record.patientName === patient.fullName));
+                            if (linked) { toast.error('Patients with clinical or billing history cannot be deleted.'); return false; }
+                            setPatients(previous => { const next = previous.filter(p => p.id !== patient.id); localStorage.setItem('tm_patients', JSON.stringify(next)); return next; });
+                            return true;
+                          }}
                           encounters={encounters}
                           labOrders={labOrders}
                           imagingOrders={imagingOrders}
