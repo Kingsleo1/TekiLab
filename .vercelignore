@@ -1,9 +1,10 @@
-node_modules
-.git
-.env*
-work
-data
-tests
-server.ts
-api/astra.ts
+# Keep dependency caches, credentials and local clinical records out of deployments.
+/node_modules/
+/.git/
+/.env*
+/work/
+/data/
+/tests/
+/server.ts
+/api/astra.ts
 *.log
