@@ -19,6 +19,6 @@ Configure secrets through the server environment. No provider credentials are in
 4. Configure the approved public HTTPS origin and test callback access and receipt reconciliation.
 5. Add verified webhook reconciliation before relying on asynchronous payments when the customer does not return to the callback.
 
-This update includes mocked provider contract tests, not an actual Flutterwave checkout or charge. A webhook receiver/reconciliation worker is not implemented. Astra migration and Vercel deployment remain held for explicit approval.
+This update includes mocked provider contract tests, not an actual Flutterwave checkout or charge. A webhook receiver/reconciliation worker is not implemented. Astra migration remains held for explicit approval. Vercel preparation is included for handoff; this does not enable the production backend.
 
 Official references: [Flutterwave Standard](https://developer.flutterwave.com/docs/collections-inflow/flutterwave-standard) and [transaction verification](https://developer.flutterwave.com/docs/transaction-verification).

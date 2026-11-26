@@ -84,7 +84,7 @@ Evidence is local and ignored under work/: demo-unit-final.txt, demo-lint-final.
 - This is workflow/reporting software; no scanner hardware, DICOM/PACS acquisition or clinical accuracy validation is claimed.
 - Broader device/accessibility and long-report layouts still need operational review.
 
-Astra DB migration and Vercel deployment remain on hold until local review and explicit user approval. The original Antigravity source checkout remains at e4a810e; application edits are in the separate preview worktree.
+The user approved Vercel deployment on 25 November 2026, targeting tekilab.vercel.app. Astra DB migration remains on hold. The hosted deployment is a UI demo: Vercel does not run the local Express feature APIs; its API routes return an explicit 503 rather than exposing the legacy credential proxy. No local preview data or environment files are uploaded. A dismissible notice explains the limitation. Production shared bookings, QR records and payments require the trusted backend. The original Antigravity source checkout remains at e4a810e; application edits are in the separate preview worktree.
 
 ## Server restart verification
 

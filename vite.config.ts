@@ -7,6 +7,7 @@ import {defineConfig} from 'vite';
 
 export default defineConfig(() => {
   return {
+    define: {'import.meta.env.VITE_HOSTED_DEMO': JSON.stringify(process.env.TEKILAB_HOSTED_DEMO === 'true' || process.env.VERCEL === '1')},
     plugins: [
       react(),
       tailwindcss(),

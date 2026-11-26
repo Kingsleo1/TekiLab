@@ -1,14 +1,13 @@
 {
+  "framework": "vite",
+  "buildCommand": "npm run build -- --configLoader native",
+  "outputDirectory": "dist",
   "cleanUrls": true,
   "trailingSlash": false,
   "rewrites": [
     {
-      "source": "/api/astra/:path*",
-      "destination": "/api/astra?__path=:path*"
-    },
-    {
-      "source": "/api/astra",
-      "destination": "/api/astra"
+      "source": "/api/:path*",
+      "destination": "/api/demo-unavailable"
     },
     {
       "source": "/((?!api/|assets/|.*\\..*).*)",
