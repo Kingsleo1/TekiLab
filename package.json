@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts tests/result-release.test.ts",
+    "test": "tsx --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts tests/result-release.test.ts tests/public-verification.test.ts",
     "test:browser": "node tests/browser.mjs",
     "test:api": "node tests/api.mjs",
     "test:integration": "node tests/integrations.mjs",
@@ -22,7 +22,8 @@
     "test:lab-findings": "node tests/lab-findings.mjs",
     "test:result-api": "node tests/result-service-api.mjs",
     "test:patient-results": "node tests/patient-results.mjs",
-    "test:native": "node --import ./scripts/native-ts-loader.mjs --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts tests/result-release.test.ts"
+    "test:native": "node --import ./scripts/native-ts-loader.mjs --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts tests/result-release.test.ts tests/public-verification.test.ts",
+    "test:hosted-verification": "node --import ./scripts/native-ts-loader.mjs tests/hosted-verification.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -73,5 +74,8 @@
   },
   "overrides": {
     "qs": "^6.17.1"
+  },
+  "engines": {
+    "node": "24.x"
   }
 }

@@ -18,7 +18,7 @@ export function createQRRouter(root:string,previewMode:boolean,catalogue:TestCat
  const wrap=(fn:any)=>async(req:any,res:any)=>{try{await fn(req,res);}catch(error){res.status(error instanceof CatalogueError?error.status:503).json({error:error instanceof CatalogueError?error.message:'The local QR registry is unavailable. No changes were confirmed.'});}};
  router.use((req,res,next)=>{res.setHeader('Cache-Control','no-store');res.setHeader('Referrer-Policy','no-referrer');res.setHeader('X-Robots-Tag','noindex, nofollow');next();});
  // Reads expose only deliberately published bearer-link records. No report listing exists.
- router.get('/results/:token',wrap(async(req:any,res:any)=>res.json(await registry.verify(req.params.token))));
+ router.get('/results/:token',wrap(async(req:any,res:any)=>res.json({...await registry.verify(req.params.token),url:siteOrigin+'/verify/'+req.params.token})));
  router.get('/booking/:token',wrap(async(req:any,res:any)=>{const b=await registry.booking(req.params.token);res.json({number:b.number,status:b.status,paymentStatus:b.status==='Checked In'?await catalogue.bookingPaymentState(b.scope,b.id):b.paymentStatus,paymentMode:b.paymentMode,onlineCheckoutAvailable:payments.enabled,appointmentDate:b.appointmentDate,appointmentTime:b.appointmentTime});}));
  router.get('/booking-config',wrap(async(req:any,res:any)=>{if(!previewMode)throw new CatalogueError(503,'Online booking requires a configured production backend.');const snapshot=await catalogue.get(publicScope);res.json({...snapshot,items:snapshot.items.filter(item=>item.isActive),scope:publicScope,siteOrigin,localOnly:/localhost|127\.0\.0\.1/.test(new URL(siteOrigin).hostname)});}));
  const rates=new Map<string,{at:number,count:number}>();

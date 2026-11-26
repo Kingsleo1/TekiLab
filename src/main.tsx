@@ -6,9 +6,9 @@ import './index.css';
 function HostedDemoNotice() {
   const [visible,setVisible]=useState(true);
   if(!import.meta.env.VITE_HOSTED_DEMO || !visible)return null;
-  return <aside aria-label="Hosted demo notice" role="status" className="fixed bottom-3 right-3 left-3 sm:left-auto sm:max-w-sm z-[100] rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 shadow-lg">
+  return <aside aria-label="Hosted demo notice" role="status" className="print:hidden fixed bottom-3 right-3 left-3 sm:left-auto sm:max-w-sm z-[100] rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950 shadow-lg">
     <strong>Demo preview</strong>
-    <p>Shared online bookings, result verification and payments await the hosted backend. Use synthetic records only.</p>
+    <p>Shared bookings and payments await the hosted clinical backend. Result verification needs Astra configuration and synced approved records. Use synthetic records only.</p>
     <button className="mt-2 font-bold underline" onClick={()=>setVisible(false)}>Continue demo</button>
   </aside>;
 }

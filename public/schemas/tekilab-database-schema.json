@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TekiLab LIMS Modular SaaS Database Schema (DataStax Astra DB & Supabase)",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "keyspace": "default_keyspace",
   "collections": {
     "tenant_configurations": {
@@ -1167,6 +1167,18 @@
     "apiPath": "/api/json/v1/{keyspace}",
     "writesRequire": "TEKILAB_ENABLE_ASTRA_WRITES=true",
     "sync": "local transactional outbox to server-side Data API; production shared reads remain pending",
-    "credentialStorage": "server environment or temporary server memory; never browser storage"
+    "credentialStorage": "server environment or temporary server memory; never browser storage",
+    "physicalCollection": "tekilab_records",
+    "entityField": "entity",
+    "indexing": {
+      "allow": [
+        "entity",
+        "tenant_id",
+        "branch_id",
+        "payload.token",
+        "payload.entity"
+      ]
+    },
+    "note": "Logical collection groups are stored as individual entity-tagged documents in one physical collection; signatures and long clinical text are not indexed."
   }
 }

@@ -6,12 +6,40 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/api/lims/qr/results/:token",
+      "destination": "/api/result-verification?token=:token"
+    },
+    {
       "source": "/api/:path*",
       "destination": "/api/demo-unavailable"
     },
     {
       "source": "/((?!api/|assets/|.*\\..*).*)",
       "destination": "/index.html"
+    }
+  ],
+  "functions": {
+    "api/result-verification.ts": {
+      "maxDuration": 30
+    }
+  },
+  "headers": [
+    {
+      "source": "/verify/:token",
+      "headers": [
+        {
+          "key": "Referrer-Policy",
+          "value": "no-referrer"
+        },
+        {
+          "key": "Cache-Control",
+          "value": "private, no-store"
+        },
+        {
+          "key": "X-Robots-Tag",
+          "value": "noindex, nofollow"
+        }
+      ]
     }
   ]
 }

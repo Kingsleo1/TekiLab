@@ -102,3 +102,9 @@ See RESULT_RELEASE_SETUP.md and FINDINGS_RESEARCH.md for the new signed rapid-re
 - TypeScript and production Vite build passed; the large-chunk warning remains. A synthetic VITE_ private-credential variable was rejected by the build guard as intended. No live provider, payment or Astra call was made.
 
 These suites overlap and the counts are not unique end-user workflows. Browser fixtures use fresh headless Edge contexts and synthetic records. Final evidence is ignored under work/release-*.txt, work/release-browser-summary.json and work/patient-results-browser.txt. The source-module-import rapid browser test was replaced for this verification by the static-build-compatible rapid-release regression; source sanitization remains unit tested.
+
+### Public verification deployment follow-up
+
+The hosted result verification route now has a read-only Astra-backed implementation; other hosted clinical APIs remain gated. See RESULT_RELEASE_SETUP.md for the required server-side settings and sync checks. The record store uses one selectively indexed physical collection with logical entity groups, preserving unrelated collections and avoiding indexes on long signed findings/signatures. Live database operations and deployment were not executed.
+
+The public verification follow-up adds ten contract tests and one selective-indexing test, for a final total of 80 passing unit tests. Its five browser checks load an approved Astra-shaped record, decode the exported PDF QR back to the same page, invoke print, reject a synchronized withdrawal, and enforce read-only access. Provider transport is mocked; the browser/PDF work is real. Public verification pages and API responses disable caching/referrers/search indexing.

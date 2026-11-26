@@ -41,13 +41,14 @@ Official API references:
 
 ## Astra administration and sync
 
-The platform administration database tab now describes TekiLab, serves the current laboratory schema, checks the connection, and can create missing Data API collections and sync the clinical outbox. It uses document collections, not the obsolete pharmacy CQL/REST-v2 schema. It never uploads source code or environment files.
+The platform administration database tab now describes TekiLab, serves the current laboratory schema, checks the connection, and can create the selectively indexed Data API record store and sync the clinical outbox. It uses document collections, not the obsolete pharmacy CQL/REST-v2 schema. It never uploads source code or environment files.
 
 Server-only settings:
 
 - ASTRA_DB_API_ENDPOINT=https://database-region.apps.astra.datastax.com
 - ASTRA_DB_APPLICATION_TOKEN=AstraCS:... (server-only; never VITE_)
 - ASTRA_DB_KEYSPACE=default_keyspace
+- TEKILAB_ASTRA_RECORDS_COLLECTION=tekilab_records (optional override; use the same value for sync and public verification)
 - TEKILAB_ENABLE_ASTRA_WRITES=true only after reviewing the schema and approving actual writes
 - TEKILAB_ADMIN_ACCESS_KEY (at least 32 characters) for non-preview administrator operations
 
@@ -55,7 +56,7 @@ The form can test a token held temporarily in server memory. It clears the token
 
 The local Node server persists scoped clinical snapshots and transactional outboxes, and retries pending events every five seconds when writes are enabled. Patients, encounters, charges, queues and diagnostic orders are projected to individual collection records; published reports, catalogue changes, bookings, payments, portal links and notification jobs have corresponding mappings. Successful operations receive local acknowledgements; failed operations remain pending. Removed snapshot entries are represented by tombstones. This is one-way synchronization from the local preview, not a completed production shared-read implementation. Legacy staff, facility and optional pharmacy stores are not all migrated by this worker.
 
-The schema manifest and its public download are kept in sync. Private credentials with a VITE_ prefix cause the build to fail rather than embedding them in browser JavaScript.
+The schema manifest and its public download are kept in sync. Logical record groups use entity-tagged documents in one physical collection, tekilab_records, rather than requiring a separate collection per group. Only entity, tenant/branch scope and the token/revocation lookup fields are indexed. Long findings, approval snapshots and signature images are not indexed. Existing collections are preserved. A changed record-store target gets its own outbox acknowledgement version so earlier records can be re-synchronized. Private credentials with a VITE_ prefix cause the build to fail rather than embedding them in browser JavaScript.
 
 No Astra connection, migration or live database write was executed during this task. Tests use synthetic providers and temporary directories. The legacy unauthenticated Astra proxy is disabled.
 
@@ -63,12 +64,31 @@ Official Data API references:
 - https://docs.datastax.com/en/astra-db-serverless/api-reference/dataapiclient.html
 - https://docs.datastax.com/en/astra-db-serverless/api-reference/document-methods/find-one-and-replace.html
 
-## Hosting boundary
+## Public result verification on Vercel
 
-The current Vercel configuration is still an explicitly labelled UI demo. It does not run the local Node clinical APIs or use local filesystem persistence. Vercel deployment plus Astra credentials alone does not enable shared booking, result saving, account authentication or live notifications. A trusted hosted clinical backend with durable storage, patient/staff sessions and API routing remains necessary before operational use. The local fixes and connectors do not remove this boundary.
+The Vercel configuration now routes GET /api/lims/qr/results/:token to a dedicated read-only serverless function. It reads the approved record and withdrawal events from Astra, checks the signature-bound clinical contents, returns the full result for the bearer link, and never accepts report writes, client credentials or listing queries.
+
+To activate public verification:
+
+1. On the local issuing server, set PUBLIC_SITE_URL to the actual approved HTTPS origin, configure the server-only Astra settings above, review the schema and enable writes.
+2. Use the super-admin panel to create the record store and synchronize the outbox. Confirm that pending events reach zero and check a synthetic published report.
+3. In Vercel, configure ASTRA_DB_API_ENDPOINT, ASTRA_DB_KEYSPACE and the matching TEKILAB_ASTRA_RECORDS_COLLECTION. Prefer a separate read-only ASTRA_VERIFICATION_APPLICATION_TOKEN; the server-only ASTRA_DB_APPLICATION_TOKEN is a fallback. Do not use a VITE_ variable for either token.
+4. Deploy this branch. Open a synthetic /verify/:token link on the deployed origin and check its download, print and withdrawal behavior before operational use.
+
+Previously printed localhost QR codes do not become public automatically. Configure the issuing server public origin and regenerate the PDF; the report token and clinical approval remain unchanged while the link is refreshed. A published record or withdrawal becomes visible on Vercel only after it reaches Astra. Keep the issuing server/outbox worker running while issuing or withdrawing reports, and confirm sync before announcing public availability or withdrawal. Database/provider access and collection limits must be verified against the actual account; no live Astra or Vercel deployment was performed here.
+
+The hosted verification route was tested using mocked Astra responses and a real headless browser/PDF QR decode, not a live Astra connection. Both laboratory and radiology records are covered by contract tests. It verifies stored approved content; it does not establish accreditation or guarantee embassy/airport acceptance.
+
+## Clinical write hosting boundary
+
+Shared online booking, staff result entry, patient login, consultation, payments and messaging still require the trusted hosted clinical backend with durable storage and real patient/staff sessions. Those hosted write APIs remain disabled. Vercel plus Astra settings can enable the read-only public verification route above; it does not complete clinical write APIs or notification delivery. Local Node workflows and one-way sync remain available separately.
 
 Physical microphone/camera/printer operation, live provider checkout, message delivery, real Astra schema provisioning and embassy acceptance were not tested. Do not use patient data to test this handoff.
 
 ## Validation evidence
 
-The final units passed 69 tests. Current browser and API results are listed in LOCAL_REVIEW.md. The verified portal flow covers an explicitly linked account and excludes unrelated same-name records, downloads its approved PDF, and shows the account reference. The portal no longer reports that a password changed when no account-service request exists; production account authentication/password changes remain pending.
+The final unit and browser counts are recorded in LOCAL_REVIEW.md. Current browser and API results are listed in LOCAL_REVIEW.md. The verified portal flow covers an explicitly linked account and excludes unrelated same-name records, downloads its approved PDF, and shows the account reference. The portal no longer reports that a password changed when no account-service request exists; production account authentication/password changes remain pending.
+
+Indexing reference: https://docs.datastax.com/en/astra-db-serverless/api-reference/collection-methods/create-collection.html
+
+The package pins Node.js 24.x, matching the tested runtime and Vite native configuration loader. Vercel supports this engine override: https://vercel.com/docs/functions/runtimes/node-js/node-js-versions
