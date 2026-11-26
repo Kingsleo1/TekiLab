@@ -1,4 +1,5 @@
-import { ensureResultVerification } from '../../services/qr';
+import {PatientPortalLink} from './PatientPortalLink';
+import { qrRequest, ensureResultVerification } from '../../services/qr';
 import { ReportVerificationControls } from './ReportVerificationControls';
 import { TestOrderPicker } from './TestOrderPicker';
 import { TestCatalogueManager } from './TestCatalogueManager';
@@ -204,6 +205,10 @@ export function RapidResultConsole({
   const [patientAge, setPatientAge] = useState('');
   const [patientGender, setPatientGender] = useState<'Male' | 'Female'>('Male');
   const [patientPhone, setPatientPhone] = useState('');
+  const [patientEmail,setPatientEmail]=useState('');
+  const [sendEmail,setSendEmail]=useState(false),[sendWhatsApp,setSendWhatsApp]=useState(false),[consultationRequested,setConsultationRequested]=useState(false);
+  const [releaseError,setReleaseError]=useState('');
+  const [savedReport,setSavedReport]=useState<any>(null);
   const [patientAllergies, setPatientAllergies] = useState('');
   const [panelLabel,setPanelLabel]=useState(RAPID_TEST_PANELS[0].name);
   const [selectedPanelId, setSelectedPanelId] = useState<string>(RAPID_TEST_PANELS[0].id);
@@ -231,11 +236,12 @@ export function RapidResultConsole({
   const [approvedBy, setApprovedBy] = useState<string>(
     currentUser?.name || currentUser?.displayName || ''
   );
+  useEffect(()=>setApprovedBy(currentUser?.name||currentUser?.displayName||''),[currentUser?.id,currentUser?.name,currentUser?.displayName]);
   const [approvalNotes, setApprovalNotes] = useState<string>('');
   const [isApproved, setIsApproved] = useState<boolean>(false);
   const [findingsHtml, setFindingsHtml] = useState('');
   const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
-  const reportSnapshot = JSON.stringify({ sampleUid, selectedPatientId, patientName, patientPhone, selectedPanelId, testId:selectedPanelId, testName:panelLabel, parameters, custodyVerified, approvalNotes, findingsHtml, aiReport, quotedFee });
+  const reportSnapshot = JSON.stringify({ sampleUid, selectedPatientId, patientName, patientPhone, patientEmail,sendEmail,sendWhatsApp,consultationRequested,workflowStartedAt,patientMrn:patients.find(p=>p.id===selectedPatientId)?.mrn||selectedPatientId, selectedPanelId, testId:selectedPanelId, testName:panelLabel, parameters, custodyVerified, approvalNotes, findingsHtml, aiReport, quotedFee });
   const critical = parameters.some(p => p.flag === 'Critical');
   useEffect(() => { setIsApproved(false); setApprovalMode(null); }, [reportSnapshot]);
   const [approvalMode, setApprovalMode] = useState<'AUTO_VERIFIED' | 'PATHOLOGIST_SIGNED' | null>(null);
@@ -247,6 +253,7 @@ export function RapidResultConsole({
     whatsappUrl: string;
     slaMet: boolean;
     turnaroundSeconds: number;
+    verification?:any; delivery?:any[]; deliveryWarning?:string;
   } | null>(null);
   const [isHandingOffRx, setIsHandingOffRx] = useState<boolean>(false);
   const [rxHandoffResult, setRxHandoffResult] = useState<{
@@ -318,7 +325,7 @@ export function RapidResultConsole({
   const handleSelectExistingPatient = (p: PatientRecord) => {
     setSelectedPatientId(p.id);
     setPatientName(p.fullName);
-    setPatientPhone(p.phone || '');
+    setPatientPhone(p.phone || '');setPatientEmail((p as any).email||'');
     setPatientAge(p.dob ? String(Math.max(0, Math.floor((Date.now() - Date.parse(p.dob)) / 31557600000))) : '');
     const g = (p as any).gender || (p as any).sex;
     setPatientGender(g === 'Female' ? 'Female' : 'Male');
@@ -355,7 +362,7 @@ export function RapidResultConsole({
     setAiReport(null);
     setIsApproved(false);
     setApprovalMode(null);
-    setDispatchResult(null);
+    setDispatchResult(null);setSavedReport(null);setReleaseError('');
     setRxHandoffResult(null);
 
     let pid = selectedPatientId;
@@ -366,7 +373,7 @@ export function RapidResultConsole({
         id: pid,
         mrn: `MRN-${Math.floor(10000 + Math.random() * 89999)}`,
         fullName: patientName.trim(),
-        phone: patientPhone.trim(),
+        phone: patientPhone.trim(),email:patientEmail.trim(),
         gender: patientGender,
         dob: patientAge.trim() ? `${new Date().getFullYear() - Number(patientAge)}-01-01` : undefined,
         allergies: patientAllergies
@@ -384,6 +391,8 @@ export function RapidResultConsole({
         onCatalogueOrders(bundle);toast.success(bundle.orders.length+' tests ordered');orderRequest.current=crypto.randomUUID();onNavigate?.(bundle.orders.every((o:any)=>o.department==='Radiology')?'radiology':'lab');
       }catch(error:any){toast.error(error.message);onRefreshCatalogue();}finally{setOrdering(false);}return;
     }
+    setPatientName(patientName.trim());setPatientPhone(patientPhone.trim());setPatientEmail(patientEmail.trim());
+    setSelectedPanelId(selectedPanel.id);setPanelLabel(selectedPanel.name);setSavedReport(null);setReleaseError('');
     setFrozenPanel(selectedPanel);
     toast.success(`Express Accession Created: ${uid}`, {
       description: `${patientName.trim()} — ${selectedPanel.name}`
@@ -499,107 +508,17 @@ export function RapidResultConsole({
       toast.error('An approved, complete result is required.');
       return;
     }
-    setIsDispatching(true);
-    try {
-      const res = await fetch('/api/lims/rapid-result/dispatch', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tenantId: config.tenantId,
-          reportApproval,
-          custodyVerified,
-          clinicalInterpretation: approvalNotes,
-          accessionNumber: sampleUid,
-          sampleBarcode: sampleUid,
-          patientId: selectedPatientId || `walkin-${Date.now()}`,
-          patientName: patientName || 'Walk-in Patient',
-          patientMrn: selectedPatientId || 'WALK-IN',
-          patientPhone: patientPhone,
-          testName: selectedPanel.name,
-          category: selectedPanel.category,
-          sampleType,
-          intakeSource,
-          instrumentId,
-          parameters,
-          aiAnomalyReport: aiReport,
-          validatedBy: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verification' : approvedBy,
-          turnaroundSeconds: Math.max(elapsedSeconds, 1)
-        })
-      });
-
-      const json = await res.json();
-      if (!res.ok || !json?.success) {
-        throw new Error(json?.error || 'Dispatch failed');
-      }
-
-      setTimerActive(false);
-      setWhatsappWarningMsg(json.whatsappWarning || null);
-
-
-      if (json.whatsappWarning) {
-        toast.warning('WhatsApp Delivery Notice', {
-          description: json.whatsappWarning,
-          duration: 7000
-        });
-      }
-
-      // Persist to lab worklist & local history
-      const mappedResults: Record<string, { value: string; unit?: string; referenceRange?: string; flag: RapidLabParameter['flag'] }> = {};
-      parameters.forEach((p) => {
-        mappedResults[p.name] = { value: p.value, unit: p.unit, referenceRange: p.referenceRange, flag: p.flag };
-      });
-
-      const releasedOrder = {
-        id: 'rapid-'+sampleUid,
-        accessionNumber: sampleUid,
-        patientId: selectedPatientId || 'walk-in',
-        patientName: patientName || 'Walk-in Patient',
-        mrn: selectedPatientId || 'WALK-IN',
-        testId: selectedPanel.id,
-        testName: selectedPanel.name,
-        category: selectedPanel.category,
-        sampleType,
-        sampleStatus: 'Sample Collected',
-        orderStatus: 'RELEASED',
-        results: mappedResults,
-        likelyIssue: aiReport?.likelyDiagnosis || 'Professional review completed',
-        clinicalInterpretation: approvalNotes,
-        validatedByName: approvalMode === 'AUTO_VERIFIED' ? 'TekiLab AI Auto-Verify' : approvedBy,
-        validatedAt: reportApproval!.signedAt,
-        createdAt: new Date(workflowStartedAt).toISOString(),
-        priceNaira: quotedFee.trim() ? Number(quotedFee) : 0,
-        pricingStatus: quotedFee.trim() ? 'Quoted' : 'Unquoted',
-        billingStatus: 'Pending',
-        findingsHtml,
-        reportApproval: reportApproval!,
-        reportNumber: json.pdfReportNumber,
-        releasedAt: reportApproval!.signedAt,
-        patientPhone
-      } as any;
-      releasedOrder.verification=await ensureResultVerification(releasedOrder,{id:releasedOrder.patientId,fullName:releasedOrder.patientName,mrn:releasedOrder.mrn},'laboratory',catalogueScope,currentUser);
-      const bundle=await saveCatalogueRecord(catalogueScope,currentUser,releasedOrder);
-      onCatalogueOrders(bundle);
-      setDispatchResult({
-        pdfReportNumber: json.pdfReportNumber,
-        whatsappUrl: json.whatsappUrl,
-        slaMet: json.slaMet,
-        turnaroundSeconds: Math.max(elapsedSeconds, 1)
-      });
-
-      if (json.record) {
-        const nextHistory = [json.record, ...recentDispatches].slice(0, 12);
-        setRecentDispatches(nextHistory);
-        localStorage.setItem('tekilab_rapid_dispatches_v2', JSON.stringify(nextHistory));
-      }
-
-      toast.success(`Report ${json.pdfReportNumber} saved; delivery link prepared`, {
-        description: `Turnaround: ${formatElapsedTime(Math.max(elapsedSeconds, 1))} (${json.slaMet ? 'Within 5–10m SLA' : 'Completed'})`
-      });
-    } catch (err: any) {
-      toast.error(err?.message || 'Dispatch failed');
-    } finally {
-      setIsDispatching(false);
-    }
+    setIsDispatching(true);setReleaseError('');
+    try{
+      const json=await qrRequest('/rapid-release',{approval:reportApproval},catalogueScope,currentUser);
+      onCatalogueOrders(json);setSavedReport(json.order);setTimerActive(false);
+      setDispatchResult({pdfReportNumber:json.pdfReportNumber,whatsappUrl:json.whatsappUrl||'',slaMet:elapsedSeconds<=600,turnaroundSeconds:Math.max(elapsedSeconds,1),verification:json.verification,delivery:json.delivery,deliveryWarning:json.deliveryWarning});
+      const record:any={...json.order,parameters,pdfReportNumber:json.pdfReportNumber,whatsappDispatch:{pdfReportNumber:json.pdfReportNumber,slaMet:elapsedSeconds<=600,turnaroundSeconds:Math.max(elapsedSeconds,1),dispatched:false}};
+      const history=[record,...recentDispatches.filter((item:any)=>item.id!==record.id)].slice(0,12);setRecentDispatches(history);localStorage.setItem('tekilab_rapid_dispatches_v2',JSON.stringify(history));
+      toast.success('Approved result saved with its verification QR.');
+      if(json.deliveryWarning)toast.warning(json.deliveryWarning);
+    }catch(error:any){setReleaseError(error.message||'The result was not confirmed saved. Retry without repeating the test.');toast.error(error.message||'Could not save the approved result.');}
+    finally{setIsDispatching(false);}
   };
 
   // Download branded PDF
@@ -610,7 +529,7 @@ export function RapidResultConsole({
       mappedResults[p.name] = { value: p.value, unit: p.unit, referenceRange: p.referenceRange, flag: p.flag };
     });
 
-    const saved=labOrders.find(order=>order.accessionNumber===sampleUid&&order.orderStatus==='RELEASED');
+    const saved=savedReport||labOrders.find(order=>order.accessionNumber===sampleUid&&order.orderStatus==='RELEASED');
     if(!saved){toast.error('Save the approved report before downloading it.');return;}
     generateLabReportPDF(saved,patients.find(p=>p.id===saved.patientId),companyLogo).then(()=>toast.success('Official TekiLab PDF report downloaded')).catch(error=>toast.error(error.message));
 
@@ -1334,6 +1253,14 @@ export function RapidResultConsole({
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 mb-1.5">Clinical Interpretation Note</label>
                 <FindingsEditor label="Rapid test findings" value={findingsHtml || textToFindings(approvalNotes)} onChange={(html, text) => { setFindingsHtml(html); setApprovalNotes(text); }} />
+                <div className="space-y-2 border rounded-xl p-3">
+                  <label className="block text-sm">Patient email<Input aria-label="Result delivery email" type="email" value={patientEmail} onChange={e=>setPatientEmail(e.target.value)}/></label>
+                  <label className="block text-sm">Patient mobile<Input aria-label="Result delivery phone" value={patientPhone} onChange={e=>setPatientPhone(e.target.value)}/></label>
+                  <p className="text-xs">Confirm the patient's choices before signing. Each link opens the full approved result.</p>
+                  <label className="flex gap-2 text-sm"><input type="checkbox" checked={sendEmail} onChange={e=>setSendEmail(e.target.checked)}/>Patient requests result by email</label>
+                  <label className="flex gap-2 text-sm"><input type="checkbox" checked={sendWhatsApp} onChange={e=>setSendWhatsApp(e.target.checked)}/>Patient requests result by WhatsApp</label>
+                  <label className="flex gap-2 text-sm"><input type="checkbox" checked={consultationRequested} onChange={e=>setConsultationRequested(e.target.checked)}/>Patient requests doctor consultation after this result</label>
+                </div>
                 <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, critical) && custodyVerified && parameters.every(p => p.value.trim())} onApprove={setReportApproval} />
               </div>
             </div>
@@ -1419,7 +1346,7 @@ export function RapidResultConsole({
                 </div>
                 <h3 className="text-sm font-bold text-neutral-950">Save Report &amp; Prepare Notification</h3>
                 <p className="text-xs text-neutral-600">
-                  Save the approved report locally and prepare a notification link. Opening a link does not confirm delivery.
+                  Save the approved report, patient result and verification QR. Requested notifications are queued separately; delivery is shown only when confirmed.
                 </p>
               </div>
               {dispatchResult ? (
@@ -1452,12 +1379,22 @@ export function RapidResultConsole({
 
 <div className="p-5 rounded-2xl border border-neutral-200 space-y-3">
   <h3 className="font-semibold text-sm">Clinician follow-up</h3>
-  <p className="text-xs text-neutral-600">Saving this report adds it to the doctor’s results queue. Medication requires an independent consultation and prescription.</p>
+  <p className="text-xs text-neutral-600">When the patient requests consultation before signing, saving routes this report to Doctor Consultation. Medication requires an independent consultation and prescription.</p>
 </div>
           </div>
         </div>
       )}
 
+      {releaseError&&<p role="alert" className="rounded border border-red-300 bg-red-50 p-4 text-red-800">{releaseError} Your entered measurements remain available.</p>}
+      {dispatchResult?.verification&&<section aria-label="Saved verified rapid result" className="rounded-xl border border-emerald-200 bg-emerald-50 p-5 space-y-3">
+        <h3 className="font-bold">Result saved and ready</h3><PatientPortalLink patientId={selectedPatientId}/>
+        <p>Saved for this patient. The verified, linked portal account can view the result. {consultationRequested?'Added to Doctor Consultation.':'No consultation was requested.'}</p>
+        <a href={dispatchResult.verification.url} target="_blank" rel="noopener noreferrer" className="font-bold text-blue-700 underline">Open verified result</a>
+        <SpecimenCode value={dispatchResult.verification.url} label="Result authenticity QR code"/>
+        {dispatchResult.verification.localOnly&&<p className="text-sm text-amber-800">This verification link is local. Public verification needs the hosted backend and a public HTTPS address.</p>}
+        {dispatchResult.delivery?.map((job:any)=><p key={job.id} className="text-sm">{job.channel==='email'?'Email':'WhatsApp'}: {job.status==='accepted'?'Accepted by provider; delivery receipt pending':job.status==='pending_configuration'?'Awaiting configured message service':job.status==='unknown'?'Delivery attempt uncertain; check provider before retrying':job.status}</p>)}
+        {dispatchResult.deliveryWarning&&<p role="alert">{dispatchResult.deliveryWarning}</p>}
+      </section>}
       {/* Recent Rapid Dispatches Table */}
       {recentDispatches.length > 0 && (
         <div className="bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 shadow-xs">

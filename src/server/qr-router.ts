@@ -1,3 +1,5 @@
+import {approvedRapidRelease} from './rapid-release';
+import {ResultNotifications} from './result-notifications';
 import {FlutterwaveBookingPayments} from './flutterwave-payments';
 import {Router} from 'express';
 import path from 'node:path';
@@ -8,6 +10,7 @@ import type {CatalogueActor,CatalogueScope} from '../types/test-catalog';
 export function createQRRouter(root:string,previewMode:boolean,catalogue:TestCatalogueStore){
  const router=Router(),registry=new QRRegistry(path.join(root,'data/local-preview/qr-registry.json'),catalogue);
  const publicScope={tenantId:process.env.TEKILAB_BOOKING_TENANT_ID||'tenant-tekilab-01',branchId:process.env.TEKILAB_BOOKING_BRANCH_ID||'pharma-1'};
+ const notifications=new ResultNotifications(process.env,previewMode);
  const payments=new FlutterwaveBookingPayments(process.env.FLW_SECRET_KEY,previewMode);
  const configuredOrigin=process.env.PUBLIC_SITE_URL;
  const siteOrigin=configuredOrigin?new URL(configuredOrigin).origin:'http://localhost:3000';
@@ -33,6 +36,20 @@ export function createQRRouter(root:string,previewMode:boolean,catalogue:TestCat
      res.locals.actor=actor;res.locals.scope={tenantId:String(req.query.tenantId||''),branchId:String(req.query.branchId||'')};next();
    }catch{return res.status(401).json({error:'Sign in to validate a booking or publish a report.'});}
  });
+ router.post('/portal/link',wrap(async(req:any,res:any)=>res.json(await registry.linkPatientAccount(res.locals.scope,res.locals.actor,req.body))));
+ router.get('/portal/results',wrap(async(req:any,res:any)=>{const reports:any[]=await registry.patientReports(res.locals.scope,res.locals.actor);res.json({orders:reports.map(report=>({...report.order,portalAccountId:report.portalAccountId,verification:{token:report.token,url:siteOrigin+'/verify/'+report.token,publishedAt:report.publishedAt,contentDigest:report.contentDigest}}))});}));
+ router.post('/rapid-release',wrap(async(req:any,res:any)=>{
+   const {order,patient}=approvedRapidRelease(res.locals.actor,req.body,await catalogue.get(res.locals.scope,res.locals.actor));
+   const existing=(await catalogue.records(res.locals.scope,res.locals.actor)).orders.find((entry:any)=>entry.id===order.id);
+   if(existing){order.billingStatus=existing.billingStatus;order.createdAt=existing.createdAt;}
+   const verification:any=await registry.publish(res.locals.scope,res.locals.actor,{kind:'laboratory',order,patient});
+   order.verification={...verification,url:siteOrigin+'/verify/'+verification.token,localOnly:/localhost|127\.0\.0\.1/.test(new URL(siteOrigin).hostname)};
+   const bundle=await catalogue.saveRecord(res.locals.scope,res.locals.actor,order);
+   let delivery:any[]=[],deliveryWarning='';
+   try{await registry.prepareDelivery(res.locals.scope,res.locals.actor,verification.token,order,siteOrigin);delivery=await registry.attemptDelivery(verification.token,notifications);}catch{deliveryWarning='The result is saved. Notification preparation needs attention; do not repeat the clinical test.';}
+   const phone=String(patient.phone||'').replace(/\D/g,'');
+   res.json({success:true,...bundle,order,verification:order.verification,delivery,deliveryWarning,pdfReportNumber:order.reportNumber,whatsappUrl:order.deliveryConsent.whatsapp&&phone?'https://wa.me/'+(phone.startsWith('0')&&phone.length===11?'234'+phone.slice(1):phone)+'?text='+encodeURIComponent('Your approved TekiLab result: '+order.verification.url):'',portalStatus:'saved'});
+ }));
  router.post('/results',wrap(async(req:any,res:any)=>{const published:any=await registry.publish(res.locals.scope,res.locals.actor,req.body);res.status(201).json({...published,url:siteOrigin+'/verify/'+published.token,localOnly:/localhost|127\.0\.0\.1/.test(new URL(siteOrigin).hostname)});}));
  router.post('/results/:token/revoke',wrap(async(req:any,res:any)=>res.json(await registry.revoke(res.locals.scope,res.locals.actor,req.params.token))));
  router.post('/scan',wrap(async(req:any,res:any)=>{

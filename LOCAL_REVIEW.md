@@ -89,3 +89,16 @@ The user approved Vercel deployment on 25 November 2026, targeting tekilab.verce
 ## Server restart verification
 
 After restarting the preview server, the home and booking pages returned HTTP 200. The approved report digest, checked-in booking, two mixed-department orders, archived catalogue item and its fee were preserved. Astra migration still returned HTTP 423, and external AI remained disabled.
+
+## Result-release and findings update - 26 November 2026
+
+See RESULT_RELEASE_SETUP.md and FINDINGS_RESEARCH.md for the new signed rapid-release endpoint, QR/patient portal linking, opted-in consultation, provider notification jobs, Astra management, and sourced findings/reference editing. These supersede the older descriptions of automatic rapid doctor routing and the pharmacy-era database panel. The server and browser integration limits remain explicit; no production authentication, Vercel clinical API parity, live message delivery or Astra connection is claimed.
+
+### Verified result-release checks
+
+- Native TypeScript unit runner: 69 passed.
+- Result-service API: 17 checks; rapid release browser: 21; findings/reference editor browser: 10; linked patient portal/browser PDF: 4.
+- Department integration: 16; booking and result QR/PDF: 25; management/imaging: 20; dictation and department integration: 19; staff dialog: 4; branch dialog: 1; existing API suite: 15.
+- TypeScript and production Vite build passed; the large-chunk warning remains. A synthetic VITE_ private-credential variable was rejected by the build guard as intended. No live provider, payment or Astra call was made.
+
+These suites overlap and the counts are not unique end-user workflows. Browser fixtures use fresh headless Edge contexts and synthetic records. Final evidence is ignored under work/release-*.txt, work/release-browser-summary.json and work/patient-results-browser.txt. The source-module-import rapid browser test was replaced for this verification by the static-build-compatible rapid-release regression; source sanitization remains unit tested.

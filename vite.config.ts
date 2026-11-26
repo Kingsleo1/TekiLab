@@ -9,6 +9,7 @@ export default defineConfig(() => {
   return {
     define: {'import.meta.env.VITE_HOSTED_DEMO': JSON.stringify(process.env.TEKILAB_HOSTED_DEMO === 'true' || process.env.VERCEL === '1')},
     plugins: [
+      {name:'server-secrets-stay-server-side',configResolved(config){if(Object.keys(config.env).some(key=>key.startsWith('VITE_')&&/(TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY)/i.test(key)&&key!=='VITE_SUPABASE_ANON_KEY'))throw new Error('Private credentials must use server-only environment variables, without the VITE_ prefix.');}},
       react(),
       tailwindcss(),
       {

@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-export function SpecimenCode({ value }: { value: string }) {
+export function SpecimenCode({ value,label }: { value: string;label?:string }) {
   const [url,setUrl] = useState('');
   useEffect(() => {
     let active = true;
     QRCode.toDataURL(value, { width: 192, margin: 2, errorCorrectionLevel: 'M' }).then(data => { if (active) setUrl(data); }).catch(() => { if (active) setUrl(''); });
     return () => { active = false; };
   }, [value]);
-  return url ? <img src={url} width={96} height={96} alt={'Scannable specimen QR code for ' + value} /> : <span className="text-xs">Generating label…</span>;
+  return url ? <img src={url} width={96} height={96} alt={label||'Scannable specimen QR code for ' + value} /> : <span className="text-xs">Generating label…</span>;
 }
 export async function downloadSpecimenLabel(value: string, patientName: string, testName: string) {
   const [{ jsPDF }, png] = await Promise.all([import('jspdf'), QRCode.toDataURL(value, { width: 256, margin: 1 })]);

@@ -101,13 +101,14 @@ try {
  await page.getByRole('button',{name:'Lab Worklist & Samples',exact:true}).click();
  await page.getByText(state.labs[0].accessionNumber,{exact:true}).first().click();
  await page.getByRole('button',{name:'Collect Sample',exact:true}).click();
- const measured=page.locator('tbody tr input');
+ const measured=page.locator('tbody tr input[placeholder="Enter value..."]');
  for(let i=0;i<await measured.count();i++)await measured.nth(i).fill('1');
  const valueSelects=page.locator('tbody tr select');
  for(let i=0;i<await valueSelects.count();i++){
   const options=await valueSelects.nth(i).locator('option').evaluateAll(els=>els.map(o=>o.value));
   if(!options.includes('Normal'))await valueSelects.nth(i).selectOption(options.find(v=>v));
  }
+ await page.getByLabel('Reference interval source',{exact:true}).fill('Synthetic laboratory SOP');await page.getByLabel('Assay method',{exact:true}).fill('Synthetic method');await page.getByLabel(/I confirmed the reference intervals/).check();
  await page.getByRole('textbox',{name:'Laboratory findings',exact:true}).fill('Synthetic laboratory interpretation for software testing.');
  const labCanvas=page.getByLabel('Draw report signature');await labCanvas.scrollIntoViewIfNeeded();const labBox=await labCanvas.boundingBox();
  await page.mouse.move(labBox.x+20,labBox.y+40);await page.mouse.down();await page.mouse.move(labBox.x+130,labBox.y+60,{steps:12});await page.mouse.up();

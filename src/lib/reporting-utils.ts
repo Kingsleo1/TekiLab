@@ -193,6 +193,8 @@ async function buildDiagnosticPDF(order: any, patient: any, logoUrl: string | un
     ['Patient', patient?.fullName || order.patientName || 'Not recorded'],
     ['MRN', patient?.mrn || order.mrn || 'Not recorded'],
     ['Test', order.testName || 'Not recorded'],
+    ...(order.assayMethod?[['Assay method',order.assayMethod]]:[]),
+    ...(order.referenceSource?[['Reference interval source',order.referenceSource]]:[]),
     ['Report / accession', order.reportNumber || order.accessionNumber || order.id],
     ['Status', approved ? 'Professionally reviewed and approved' : 'DRAFT - approval required']
   ];

@@ -1,3 +1,4 @@
+import {getRoleDefinition} from '../config/roles';
 export interface ReportApproval {
   signerId: string; signerName: string; signedAt: string;
   reportSnapshot: string; reportDigest: string; signaturePng: string;
@@ -10,6 +11,7 @@ export const recallSignature = (userId: string) => signatures.get(userId);
 export function canApproveReport(user: any, critical = false, imaging = false): boolean {
   if (!user?.id || !(user.name || user.displayName)) return false;
   const role = String(user.role || '').toLowerCase();
+  user={...user,permissions:[...getRoleDefinition(user.role).permissions,...(user.permissions||[])]};
   if (/patient|recept|phleb|cashier|sample/.test(role)) return false;
   if (imaging) return /radiolog|doctor|physician|pathologist|kernel admin|^admin$|ceo/.test(role);
   if (critical) return /lead|pathologist|kernel admin|^admin$/.test(role) || Boolean(user.permissions?.includes('canSignOffCritical'));

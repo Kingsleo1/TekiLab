@@ -537,6 +537,8 @@ export interface LabTestCatalogItem {
 }
 
 export interface LabOrder {
+  verification?:{token:string;url:string;publishedAt?:string;contentDigest?:string;localOnly?:boolean};
+  findingCode?:string; referenceSource?:string; assayMethod?:string; referenceReviewed?:boolean; rapidWorkflow?:boolean; consultationRequested?:boolean;
   findingsHtml?: string;
   reportApproval?: import('../lib/report-approval').ReportApproval;
   pricingStatus?: 'Quoted' | 'Unquoted';

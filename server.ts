@@ -1,3 +1,5 @@
+import {createAstraManagementRouter} from './src/server/astra-management';
+import {createClinicalStateRouter} from './src/server/clinical-state';
 import { createQRRouter } from './src/server/qr-router';
 import express from 'express';
 import { createTestCatalogueRouter } from './src/server/test-catalog-router';
@@ -501,6 +503,8 @@ async function startServer() {
 
   app.disable('x-powered-by');
   app.use((req, res, next) => {
+    if(!previewMode&&req.path.startsWith('/api/lims/')&&!req.path.startsWith('/api/lims/admin/astra/')&&!(req.method==='GET'&&/^\/api\/lims\/qr\/(results|booking)\/[A-Za-z0-9_-]{43}$/.test(req.path)))return res.status(503).json({error:'Trusted hosted clinical authentication and persistence are required before enabling this operation.'});
+    if(req.path==='/api/astra'||req.path.startsWith('/api/astra/'))return res.status(423).json({error:'Legacy Astra proxy disabled. Use authenticated laboratory database management.'});
     if (previewMode) {
       res.setHeader('X-TekiLab-Mode', 'local-preview');
       res.setHeader('Content-Security-Policy', "connect-src 'self' ws://localhost:* ws://127.0.0.1:*; frame-ancestors 'none'; base-uri 'self'");
@@ -517,7 +521,9 @@ async function startServer() {
   const catalogueRouter=await createTestCatalogueRouter(__dirname,previewMode);
   app.use('/api/lims/test-catalog',catalogueRouter);
   app.use('/api/lims/qr',createQRRouter(__dirname,previewMode,(catalogueRouter as any).catalogueStore));
-  app.get('/api/preview/status', (_req, res) => res.json({ previewMode, databaseWrites: !previewMode, externalAI: !previewMode }));
+  app.use('/api/lims/admin/astra',createAstraManagementRouter(__dirname,previewMode));
+  app.use('/api/lims/clinical-state',createClinicalStateRouter(__dirname,previewMode));
+  app.get('/api/preview/status', (_req, res) => res.json({ previewMode, databaseWrites: !previewMode || process.env.TEKILAB_ENABLE_ASTRA_WRITES==='true', externalAI: !previewMode }));
 
   // 1. Check Astra DB Connection Status
   app.get('/api/astra/status', async (req, res) => {
@@ -1105,6 +1111,7 @@ async function startServer() {
 
   // C. 5-Minute Rapid Result Console: Instant Validate, Persist & WhatsApp PDF Dispatch
   app.post('/api/lims/rapid-result/dispatch', async (req, res) => {
+    if(!previewMode)return res.status(503).json({error:'Configure trusted clinical authentication before releasing results.'});
     try {
       const body = req.body || {};
       const invalid = validateDispatch(body);

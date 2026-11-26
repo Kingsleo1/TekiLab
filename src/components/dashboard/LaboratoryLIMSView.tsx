@@ -1,3 +1,4 @@
+import {ClinicalFindingPicker} from './ClinicalFindingPicker';
 import { ensureResultVerification } from '../../services/qr';
 import { ReportVerificationControls } from './ReportVerificationControls';
 import React, { useState } from 'react';
@@ -50,19 +51,6 @@ interface LaboratoryLIMSViewProps {
   onOpenCatalogManager?: () => void;
 }
 
-const COMMON_LAB_FINDINGS = [
-  'Normal Physiological Reference Values (Unremarkable)',
-  'Plasmodium falciparum Malaria Parasites Detected (High Parasitemia)',
-  'No Malaria Parasites Seen (Negative MP)',
-  'Microcytic Hypochromic Anemia (Low Hb / PCV)',
-  'Acute Bacterial Urinary Tract Infection (Pyuria & Nitrite Positive)',
-  'Enteric Fever / Salmonella Typhi Antibody Reactive (Widal Positive)',
-  'Type 2 Diabetes Mellitus / Elevated Fasting Glucose & HbA1c',
-  'Acute Renal Insufficiency / Elevated Creatinine & Serum Urea',
-  'Severe Leukocytosis / Infection / Inflammatory Response',
-  'Hypokalemia / Electrolyte Imbalance',
-  'Viral Swab Positive / Active Viral Infection'
-];
 
 export function formatWhatsAppPhone(phone: string = ''): string {
   let cleaned = phone.replace(/[^0-9]/g, '');
@@ -90,7 +78,9 @@ export function LaboratoryLIMSView({onNavigate,
   const [selectedOrder, setSelectedPatientOrder] = useState<LabOrder | null>(null);
 
   // Result Entry Form State
-  const [resultValues, setResultValues] = useState<Record<string, { value: string; flag: 'Normal' | 'High' | 'Low' | 'Critical' | 'Positive' | 'Negative' }>>({});
+  const [resultValues, setResultValues] = useState<Record<string, { value: string; flag: 'Normal' | 'High' | 'Low' | 'Critical' | 'Positive' | 'Negative';unit?:string;referenceRange?:string }>>({});
+  const [findingCode,setFindingCode]=useState('');
+  const [referenceSource,setReferenceSource]=useState(''),[assayMethod,setAssayMethod]=useState(''),[referenceReviewed,setReferenceReviewed]=useState(false);
   const [likelyIssue, setLikelyIssue] = useState<string>('');
   const [isCustomIssueMode, setIsCustomIssueMode] = useState(false);
   const [customIssueText, setCustomIssueText] = useState('');
@@ -98,8 +88,8 @@ export function LaboratoryLIMSView({onNavigate,
   const [isPreviewPdfOpen, setIsPreviewPdfOpen] = useState(false);
   const [findingsHtml, setFindingsHtml] = useState('');
   const [reportApproval, setReportApproval] = useState<ReportApproval | null>(null);
-  const reportSnapshot = JSON.stringify({ id: selectedOrder?.id, patientId: selectedOrder?.patientId, patientName:selectedOrder?.patientName, mrn:selectedOrder?.mrn, testId:selectedOrder?.testId, testName:selectedOrder?.testName, accessionNumber:(selectedOrder as any)?.accessionNumber, resultValues, template: labCatalog.find(c => c.id === selectedOrder?.testId)?.parameters, clinicalInterpretation, findingsHtml, likelyIssue, customIssueText, isCustomIssueMode });
-  const critical = Object.values(resultValues).some((v: any) => v.flag === 'Critical');
+  const reportSnapshot = JSON.stringify({ id: selectedOrder?.id, patientId: selectedOrder?.patientId, patientName:selectedOrder?.patientName, mrn:selectedOrder?.mrn, testId:selectedOrder?.testId, testName:selectedOrder?.testName, accessionNumber:(selectedOrder as any)?.accessionNumber, resultValues, template: labCatalog.find(c => c.id === selectedOrder?.testId)?.parameters, clinicalInterpretation, findingsHtml, likelyIssue, findingCode,referenceSource,assayMethod,referenceReviewed,customIssueText, isCustomIssueMode });
+  const critical = (['AA','HH','LL'].includes(findingCode)||Object.values(resultValues).some((v: any) => v.flag === 'Critical'));
 
   const filteredOrders = labOrders.filter(order => {
     const matchesFilter = activeFilter === 'ALL' || order.orderStatus === activeFilter;
@@ -112,13 +102,13 @@ export function LaboratoryLIMSView({onNavigate,
   });
 
   const handleSelectOrder = (order: LabOrder) => {
-    setSelectedPatientOrder(order);
+    setSelectedPatientOrder(order);setFindingCode((order as any).findingCode||'');setReferenceSource((order as any).referenceSource||'');setAssayMethod((order as any).assayMethod||'');setReferenceReviewed(order.orderStatus==='RELEASED');
     setReportApproval(null);
     setFindingsHtml(order.findingsHtml || textToFindings(order.clinicalInterpretation || ''));
     if (order.results) {
       const initial: any = {};
       Object.entries(order.results).forEach(([k, v]) => {
-        initial[k] = { value: String(v.value ?? ''), flag: v.flag || 'Normal' };
+        initial[k] = { value: String(v.value ?? ''), flag: v.flag || 'Normal',unit:v.unit||'',referenceRange:v.referenceRange||'' };
       });
       setResultValues(initial);
     } else {
@@ -131,7 +121,7 @@ export function LaboratoryLIMSView({onNavigate,
   };
 
   const handleCollectSample = async(order: LabOrder) => {
-    const updated: LabOrder = {
+    const updated: LabOrder & {findingCode?:string;referenceSource?:string;assayMethod?:string;referenceReviewed?:boolean} = {
       ...order,
       sampleStatus: 'Sample Collected',
       orderStatus: 'PROCESSING',
@@ -156,8 +146,8 @@ export function LaboratoryLIMSView({onNavigate,
       updatedResults[paramName] = {
         value: data.value,
         flag: data.flag,
-        unit: parameter?.unit,
-        referenceRange: parameter?.referenceRange
+        unit: data.unit??parameter?.unit,
+        referenceRange: data.referenceRange??parameter?.referenceRange
       };
     });
 
@@ -167,9 +157,11 @@ export function LaboratoryLIMSView({onNavigate,
       ...selectedOrder,
       orderStatus: 'RESULT_ENTERED',
       findingsHtml,
+      findingCode,referenceSource,assayMethod,referenceReviewed,
       results: updatedResults,
       likelyIssue: finalIssue,
       clinicalInterpretation,
+
       enteredByName: currentUser?.displayName || currentUser?.name || '',
       enteredAt: new Date().toISOString()
     };
@@ -181,6 +173,7 @@ export function LaboratoryLIMSView({onNavigate,
 
   const handleValidateAndRelease = async () => {
     if (!selectedOrder) return;
+    if(!referenceReviewed){toast.error('Confirm the method-specific reference intervals and units before approval.');return;}
 
     if (selectedOrder.orderStatus === 'RELEASED' || selectedOrder.sampleStatus !== 'Sample Collected') {
       toast.error('Collect the sample before approving a result. Released reports cannot be overwritten.');
@@ -205,8 +198,8 @@ export function LaboratoryLIMSView({onNavigate,
       updatedResults[paramName] = {
         value: data.value,
         flag: data.flag,
-        unit: parameter?.unit,
-        referenceRange: parameter?.referenceRange
+        unit: data.unit??parameter?.unit,
+        referenceRange: data.referenceRange??parameter?.referenceRange
       };
     });
 
@@ -214,7 +207,7 @@ export function LaboratoryLIMSView({onNavigate,
       ...selectedOrder,
       orderStatus: 'RELEASED',
       findingsHtml,
-      reportApproval: reportApproval!,
+      reportApproval: reportApproval!,findingCode,referenceSource,assayMethod,referenceReviewed,
       results: Object.keys(updatedResults).length > 0 ? updatedResults : selectedOrder.results,
       likelyIssue: finalIssue,
       clinicalInterpretation,
@@ -245,7 +238,7 @@ export function LaboratoryLIMSView({onNavigate,
     generateLabReportPDF(order, pat, companyLogo);
 
     // 2. Format professional WhatsApp message
-    const msg = 'Your laboratory report is ready. Please contact your diagnostic centre to receive it securely.';
+    const msg = order.verification?.url?'Your approved TekiLab result: '+order.verification.url:'Your laboratory report is ready. Contact your diagnostic centre to receive it securely.';
 
     const waUrl = `https://wa.me/${cleanWhatsApp}?text=${encodeURIComponent(msg)}`;
     window.open(waUrl, '_blank');
@@ -440,16 +433,7 @@ export function LaboratoryLIMSView({onNavigate,
                       className="bg-white dark:bg-zinc-950 text-xs font-medium"
                     />
                   ) : (
-                    <select
-                      value={likelyIssue}
-                      onChange={(e) => setLikelyIssue(e.target.value)}
-                      className="w-full h-9 rounded-xl border border-input bg-white dark:bg-zinc-950 px-3 text-xs font-semibold focus:outline-none"
-                    >
-                      <option value="">Select a finding (optional)</option>
-                      {COMMON_LAB_FINDINGS.map(finding => (
-                        <option key={finding} value={finding}>{finding}</option>
-                      ))}
-                    </select>
+                    <ClinicalFindingPicker value={likelyIssue} disabled={selectedOrder.orderStatus==='RELEASED'} onSelect={(label,code)=>{setLikelyIssue(label);setFindingCode(code);if(!clinicalInterpretation.trim()&&label){const draft='Interpretation: '+label+'. Correlate with the measured result and assay documentation.';setClinicalInterpretation(draft);setFindingsHtml(textToFindings(draft));}}}/>
                   )}
                 </div>
 
@@ -461,8 +445,8 @@ export function LaboratoryLIMSView({onNavigate,
 
                   {(() => {
                     const catalogItem = labCatalog.find(c => c.id === selectedOrder.testId) ;
-                    const params = catalogItem?.parameters || [
-                      { id: 'g1', name: 'Primary Finding', referenceRange: 'Normal', fieldType: 'text' }
+                    const params = (selectedOrder as any).catalogueSnapshot?.parameters?.length?(selectedOrder as any).catalogueSnapshot.parameters:catalogItem?.parameters?.length?catalogItem.parameters: [
+                      { id: 'g1', name: 'Primary Finding', referenceRange: '',unit:'', fieldType: 'text' }
                     ];
 
                     return (
@@ -480,13 +464,15 @@ export function LaboratoryLIMSView({onNavigate,
                             {params.map((param) => {
                               const current = resultValues[param.name] || {
                                 value: selectedOrder.results?.[param.name]?.value || '',
-                                flag: selectedOrder.results?.[param.name]?.flag || 'Normal'
+                                flag: selectedOrder.results?.[param.name]?.flag || 'Normal',
+                                unit:selectedOrder.results?.[param.name]?.unit??param.unit??'',
+                                referenceRange:selectedOrder.results?.[param.name]?.referenceRange??param.referenceRange??''
                               };
 
                               return (
                                 <tr key={param.id}>
                                   <td className="p-3 font-medium text-slate-900 dark:text-slate-100">{param.name}</td>
-                                  <td className="p-3 text-slate-500">{param.referenceRange} {param.unit || ''}</td>
+                                  <td className="p-3 min-w-[180px] space-y-2"><Input aria-label={'Reference range for '+param.name} disabled={selectedOrder.orderStatus==='RELEASED'} placeholder="Lab / method reference interval" value={current.referenceRange??param.referenceRange??''} onChange={e=>{setReferenceReviewed(false);setResultValues(prev=>({...prev,[param.name]:{...current,referenceRange:e.target.value}}));}}/><Input aria-label={'Units for '+param.name} disabled={selectedOrder.orderStatus==='RELEASED'} placeholder="Units, or not applicable" value={current.unit??param.unit??''} onChange={e=>{setReferenceReviewed(false);setResultValues(prev=>({...prev,[param.name]:{...current,unit:e.target.value}}));}}/></td>
                                   <td className="p-3">
                                     {param.fieldType === 'select' && param.options ? (
                                       <select 
@@ -541,6 +527,7 @@ export function LaboratoryLIMSView({onNavigate,
                   })()}
                 </div>
 
+                <section aria-label="Reference interval review" className="rounded border p-3 space-y-2 text-sm"><p>Confirm the reference interval and units for this laboratory method and patient. The catalogue is a starting template. Qualitative tests may have an expected response rather than a numeric interval.</p><Input aria-label="Reference interval source" disabled={selectedOrder.orderStatus==='RELEASED'} placeholder="Local SOP, analyzer or manufacturer instructions" value={referenceSource} onChange={e=>{setReferenceSource(e.target.value);setReferenceReviewed(false);}}/><Input aria-label="Assay method" disabled={selectedOrder.orderStatus==='RELEASED'} placeholder="Assay / analyzer method" value={assayMethod} onChange={e=>{setAssayMethod(e.target.value);setReferenceReviewed(false);}}/><label className="flex gap-2"><input type="checkbox" checked={referenceReviewed} disabled={selectedOrder.orderStatus==='RELEASED'} onChange={e=>setReferenceReviewed(e.target.checked)}/>I confirmed the reference intervals and units against the applicable method and patient context, or marked them not applicable.</label></section>
                 {/* Clinical Interpretation */}
                 <div className="space-y-1">
                   <label className="text-xs font-semibold text-slate-800 dark:text-slate-200">Microbiologist / Pathologist Remarks & Impression</label>
@@ -548,7 +535,7 @@ export function LaboratoryLIMSView({onNavigate,
                 </div>
 
                 <ReportVerificationControls order={selectedOrder} patient={patients.find(p=>p.id===selectedOrder.patientId)} kind="laboratory"/>
-                {selectedOrder.orderStatus !== 'RELEASED' && <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, critical) && selectedOrder.sampleStatus === 'Sample Collected'} onApprove={setReportApproval} />}
+                {selectedOrder.orderStatus !== 'RELEASED' && <ReportSignature snapshot={reportSnapshot} user={currentUser} enabled={canApproveReport(currentUser, critical) && selectedOrder.sampleStatus === 'Sample Collected' && referenceReviewed} onApprove={setReportApproval} />}
                 {/* Scientist Sign-Off Actions */}
                 <div className="pt-4 border-t border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3">
                   <div className="text-xs text-slate-500">

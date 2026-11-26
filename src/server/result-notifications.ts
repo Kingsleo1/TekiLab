@@ -1,0 +1,10 @@
+export interface DeliveryJob {id:string;channel:'email'|'whatsapp';to:string;url:string;status:string;providerId?:string;updatedAt?:string;}
+export class ResultNotifications{
+ constructor(private env:Record<string,string|undefined>,private preview:boolean,private transport:typeof fetch=fetch){}
+ configured(channel:DeliveryJob['channel']){if(this.preview||this.env.TEKILAB_ENABLE_NOTIFICATIONS!=='true')return false;return channel==='email'?Boolean(this.env.RESEND_API_KEY&&this.env.TEKILAB_EMAIL_FROM):Boolean(this.env.WHATSAPP_ACCESS_TOKEN&&this.env.WHATSAPP_PHONE_NUMBER_ID&&this.env.WHATSAPP_RESULT_TEMPLATE&&/^v\d+\.\d+$/.test(this.env.WHATSAPP_GRAPH_VERSION||''));}
+ async send(job:DeliveryJob):Promise<{status:string;providerId?:string}>{
+  if(!this.configured(job.channel))return {status:'pending_configuration'};if(!job.url.startsWith('https://'))return {status:'pending_public_https'};
+  const email=job.channel==='email';const request=email?{url:'https://api.resend.com/emails',key:this.env.RESEND_API_KEY!,body:{from:this.env.TEKILAB_EMAIL_FROM,to:[job.to],subject:'Your TekiLab result is ready',text:'Your approved result is available at '+job.url+'\nThis private link opens the full report. Share it only with intended recipients.'}}:{url:'https://graph.facebook.com/'+this.env.WHATSAPP_GRAPH_VERSION+'/'+encodeURIComponent(this.env.WHATSAPP_PHONE_NUMBER_ID!)+'/messages',key:this.env.WHATSAPP_ACCESS_TOKEN!,body:{messaging_product:'whatsapp',to:job.to,type:'template',template:{name:this.env.WHATSAPP_RESULT_TEMPLATE,language:{code:this.env.WHATSAPP_TEMPLATE_LANGUAGE||'en'},components:[{type:'body',parameters:[{type:'text',text:job.url}]}]}}};
+  try{const response=await this.transport(request.url,{method:'POST',redirect:'error',headers:{Authorization:'Bearer '+request.key,'Content-Type':'application/json',...(email?{'Idempotency-Key':job.id}:{})},body:JSON.stringify(request.body),signal:AbortSignal.timeout(8000)});const body=await response.json(),id=email?body.id:body.messages?.[0]?.id;if(!response.ok)return {status:'rejected'};return id?{status:'accepted',providerId:String(id)}:{status:'unknown'};}catch{return {status:'unknown'};}
+ }
+}

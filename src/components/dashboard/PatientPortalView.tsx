@@ -1,5 +1,7 @@
+import {ownReleasedResults} from '../../lib/patient-results';
+import {qrRequest} from '../../services/qr';
 import { OnlineBooking } from '../ClinicalPublicPages';
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import {
   LayoutDashboard,
   FlaskConical,
@@ -99,26 +101,7 @@ interface ReferralItem {
   createdAt: string;
 }
 
-const DEFAULT_REFERRALS: ReferralItem[] = [
-  {
-    id: 'ref-1',
-    friendName: 'Adaeze Eze',
-    friendPhone: '+234 809 412 8821',
-    note: 'Full Health Checkup',
-    status: 'Completed',
-    rewardNaira: 1500,
-    createdAt: '2026-11-12T09:30:00.000Z'
-  },
-  {
-    id: 'ref-2',
-    friendName: 'Emeka Nwankwo',
-    friendPhone: '+234 803 771 2904',
-    note: 'Malaria & Typhoid Rapid Panel',
-    status: 'Invited',
-    rewardNaira: 0,
-    createdAt: '2026-11-20T14:15:00.000Z'
-  }
-];
+const DEFAULT_REFERRALS: ReferralItem[] = [];
 
 export function PatientPortalView({
   currentUser,
@@ -137,20 +120,20 @@ export function PatientPortalView({
   // Patient Profile State
   const [profile, setProfile] = useState(() => {
     try {
-      const saved = localStorage.getItem(PROFILE_STORAGE_KEY);
+      const saved = localStorage.getItem(PROFILE_STORAGE_KEY+':'+(currentUser?.id||'anonymous'));
       if (saved) return JSON.parse(saved);
     } catch {}
     return {
-      fullName: currentUser?.name || 'Chinedu Okafor',
-      email: currentUser?.email || 'chinedu.okafor@tekilab.io',
-      phone: currentUser?.phone || '+234 803 123 4567',
-      mrn: currentUser?.mrn || 'TK-PAT-10421',
-      gender: 'Male',
-      dob: '1991-06-18',
-      bloodGroup: 'O+',
-      address: 'Victoria Island, Lagos, Nigeria',
-      allergies: 'None recorded',
-      emergencyContact: 'Ngozi Okafor (+234 802 555 0192)'
+      fullName: currentUser?.name || '',
+      email: currentUser?.email || '',
+      phone: currentUser?.phone || '',
+      mrn: currentUser?.mrn || '',
+      gender: currentUser?.gender||'',
+      dob: currentUser?.dob||'',
+      bloodGroup: currentUser?.bloodGroup||'',
+      address: currentUser?.address||'',
+      allergies: currentUser?.allergies||'',
+      emergencyContact: currentUser?.emergencyContact||''
     };
   });
 
@@ -172,7 +155,7 @@ export function PatientPortalView({
 
   const [myBookings, setMyBookings] = useState<any[]>(() => {
     try {
-      const saved = localStorage.getItem(BOOKINGS_STORAGE_KEY);
+      const saved = localStorage.getItem(BOOKINGS_STORAGE_KEY+':'+(currentUser?.id||'anonymous'));
       return saved ? JSON.parse(saved) : [];
     } catch {
       return [];
@@ -182,7 +165,7 @@ export function PatientPortalView({
   // Referrals State
   const [referrals, setReferrals] = useState<ReferralItem[]>(() => {
     try {
-      const saved = localStorage.getItem(REFERRALS_STORAGE_KEY);
+      const saved = localStorage.getItem(REFERRALS_STORAGE_KEY+':'+(currentUser?.id||'anonymous'));
       return saved ? JSON.parse(saved) : DEFAULT_REFERRALS;
     } catch {
       return DEFAULT_REFERRALS;
@@ -202,17 +185,11 @@ export function PatientPortalView({
   const availableCreditNaira = referrals.reduce((sum, r) => sum + (r.rewardNaira || 0), 0);
   const phoneMeta = normalizeNigerianWhatsAppPhone(profile.phone);
 
-  // Strict privacy filter: Patient ONLY sees their own lab results
-  const myResults = useMemo(() => {
-    const uName = (profile.fullName || '').toLowerCase().trim();
-    const uId = currentUser?.id || '';
-    const matches = labOrders.filter(
-      (l) =>
-        (uId && l.patientId === uId) ||
-        (uName && l.patientName?.toLowerCase().includes(uName))
-    );
-    return matches.length > 0 ? matches : labOrders.slice(0, 3);
-  }, [labOrders, currentUser, profile.fullName]);
+  const [portalRecords,setPortalRecords]=useState<any[]>([]);
+  const [portalError,setPortalError]=useState('');
+  const linkedPatientId=currentUser?.id||'';
+  useEffect(()=>{let active=true;setPortalRecords([]);const refresh=()=>{if(!linkedPatientId)return;qrRequest('/portal/results',undefined,{tenantId:currentUser?.tenantId||'tenant-tekilab-01',branchId:currentUser?.branchId||'pharma-1'},{...currentUser,id:linkedPatientId}).then(data=>{if(active){setPortalRecords(data.orders||[]);setPortalError('');}}).catch(()=>{if(active)setPortalError('Shared result refresh is unavailable. Only locally saved results are shown.');});};refresh();const timer=setInterval(refresh,15000);return()=>{active=false;clearInterval(timer);};},[linkedPatientId,currentUser?.tenantId,currentUser?.branchId]);
+  const myResults=useMemo(()=>{const records=new Map([...ownReleasedResults(labOrders,linkedPatientId),...portalRecords.filter(order=>['RELEASED','Released'].includes(order.orderStatus)&&order.reportApproval&&order.verification?.token)].map(order=>[order.id,order]));return Array.from(records.values());},[labOrders,portalRecords,linkedPatientId]);
 
   // Unified Chronological Interaction History with the Lab
   const interactionHistory = useMemo(() => {
@@ -301,7 +278,7 @@ export function PatientPortalView({
 
       const next = [booking, ...myBookings];
       setMyBookings(next);
-      localStorage.setItem(BOOKINGS_STORAGE_KEY, JSON.stringify(next));
+      localStorage.setItem(BOOKINGS_STORAGE_KEY+':'+(currentUser?.id||'anonymous'), JSON.stringify(next));
 
       onOnlineBookingCreated?.(booking);
       notifyOrderArrival({
@@ -338,7 +315,7 @@ export function PatientPortalView({
     };
     const next = [newRef, ...referrals];
     setReferrals(next);
-    localStorage.setItem(REFERRALS_STORAGE_KEY, JSON.stringify(next));
+    localStorage.setItem(REFERRALS_STORAGE_KEY+':'+(currentUser?.id||'anonymous'), JSON.stringify(next));
     setRefFriendName('');
     setRefFriendPhone('');
     setRefNote('');
@@ -349,7 +326,7 @@ export function PatientPortalView({
 
   const handleSaveProfile = (e: React.FormEvent) => {
     e.preventDefault();
-    localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profile));
+    localStorage.setItem(PROFILE_STORAGE_KEY+':'+(currentUser?.id||'anonymous'), JSON.stringify(profile));
     if (onUserUpdate && currentUser) {
       const updated = { ...currentUser, name: profile.fullName, email: profile.email, phone: profile.phone };
       localStorage.setItem('ph_current_user', JSON.stringify(updated));
@@ -372,24 +349,16 @@ export function PatientPortalView({
       toast.error('New password and confirmation do not match.');
       return;
     }
-    localStorage.setItem('tekilab_patient_password_updated_at', new Date().toISOString());
-    setCurrentPwd('');
-    setNewPwd('');
-    setConfirmPwd('');
-    toast.success('Your Patient Portal password has been updated securely.');
+    toast.error('Password changes require the configured account service. No password was changed.');
   };
 
-  const handleDownloadResultPDF = (order: LabOrder) => {
-    generateLabReportPDF(order as any, {
-      name: 'TekiLab Medical Laboratory',
-      logoUrl: '/logo.png?v=5'
-    });
-    toast.success('Official TekiLab PDF report downloaded.');
+  const handleDownloadResultPDF = async(order:LabOrder) => {
+    try{await generateLabReportPDF(order,{id:order.patientId,fullName:order.patientName,mrn:order.mrn});toast.success('Verified result PDF downloaded.');}catch(error:any){toast.error(error.message||'The verified result could not be downloaded.');}
   };
-
   const handlePrintResult = () => {
-    window.print();
-    toast.success('Print dialog opened for your official TekiLab report.');
+    if(!selectedResult?.verification?.url){toast.error('Open a saved verified result before printing.');return;}
+    window.open(selectedResult.verification.url,'_blank','noopener,noreferrer');
+    toast.info('Use Print verified result on the result verification page.');
   };
 
   const navItems: { id: PatientTab; label: string; icon: React.ReactNode; badge?: number }[] = [
@@ -402,7 +371,7 @@ export function PatientPortalView({
   ];
 
   const content = (
-    <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans text-neutral-950">
+    <div className="max-w-5xl mx-auto space-y-6 pb-12 font-sans text-neutral-950">{portalError&&<p role="status" className="rounded border border-amber-300 bg-amber-50 p-3 text-sm">{portalError}</p>}
       {/* Top Tabs when embedded inside Staff App */}
       {!standalone && (
         <div className="bg-white border border-neutral-200 rounded-2xl p-2 flex flex-wrap items-center gap-1.5 shadow-xs">
@@ -804,7 +773,7 @@ export function PatientPortalView({
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Personal Information Form */}
           <form onSubmit={handleSaveProfile} className="lg:col-span-7 bg-white border border-neutral-200 rounded-2xl p-6 space-y-4 shadow-xs">
-            <h2 className="text-lg font-bold text-neutral-950">My Personal Information</h2>
+            <h2 className="text-lg font-bold text-neutral-950">My Personal Information</h2><p className="text-sm break-all">Portal account reference: <strong>{currentUser?.id||'Not signed in'}</strong></p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
               <div>
                 <label className="block text-xs font-semibold text-neutral-700 mb-1">Full Name</label>

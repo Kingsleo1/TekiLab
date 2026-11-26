@@ -1,0 +1,315 @@
+// HL7 THO observation interpretations; CC0. See FINDINGS_RESEARCH.md for provenance.
+export const CLINICAL_FINDINGS = [
+  {
+    "id": "hl7-EX",
+    "code": "EX",
+    "label": "outside threshold",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-CAR",
+    "code": "CAR",
+    "label": "Carrier",
+    "category": "Other reviewed interpretations",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-B",
+    "code": "B",
+    "label": "Better",
+    "category": "Trend compared with prior result",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-D",
+    "code": "D",
+    "label": "Significant change down",
+    "category": "Trend compared with prior result",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-U",
+    "code": "U",
+    "label": "Significant change up",
+    "category": "Trend compared with prior result",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-W",
+    "code": "W",
+    "label": "Worse",
+    "category": "Trend compared with prior result",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-<",
+    "code": "<",
+    "label": "Off scale low",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7->",
+    "code": ">",
+    "label": "Off scale high",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-IE",
+    "code": "IE",
+    "label": "Insufficient evidence",
+    "category": "Equivocal / uncertain",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-A",
+    "code": "A",
+    "label": "Abnormal",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-N",
+    "code": "N",
+    "label": "Normal",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-I",
+    "code": "I",
+    "label": "Intermediate",
+    "category": "Antimicrobial susceptibility",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-NCL",
+    "code": "NCL",
+    "label": "No CLSI defined breakpoint",
+    "category": "Antimicrobial susceptibility",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-NS",
+    "code": "NS",
+    "label": "Non-susceptible",
+    "category": "Antimicrobial susceptibility",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-R",
+    "code": "R",
+    "label": "Resistant",
+    "category": "Antimicrobial susceptibility",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-S",
+    "code": "S",
+    "label": "Susceptible",
+    "category": "Antimicrobial susceptibility",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-AA",
+    "code": "AA",
+    "label": "Critical abnormal",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-H",
+    "code": "H",
+    "label": "High",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-L",
+    "code": "L",
+    "label": "Low",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-HH",
+    "code": "HH",
+    "label": "Critical high",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-LL",
+    "code": "LL",
+    "label": "Critical low",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-HX",
+    "code": "HX",
+    "label": "above high threshold",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-LX",
+    "code": "LX",
+    "label": "below low threshold",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-HU",
+    "code": "HU",
+    "label": "Significantly high",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-E",
+    "code": "E",
+    "label": "Equivocal",
+    "category": "Equivocal / uncertain",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-LU",
+    "code": "LU",
+    "label": "Significantly low",
+    "category": "Reference interval / thresholds",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-ND",
+    "code": "ND",
+    "label": "Not detected",
+    "category": "Negative / not detected",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-IND",
+    "code": "IND",
+    "label": "Indeterminate",
+    "category": "Equivocal / uncertain",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-NEG",
+    "code": "NEG",
+    "label": "Negative",
+    "category": "Negative / not detected",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-POS",
+    "code": "POS",
+    "label": "Positive",
+    "category": "Positive / detected / reactive",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-EXP",
+    "code": "EXP",
+    "label": "Expected",
+    "category": "Other reviewed interpretations",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-UNE",
+    "code": "UNE",
+    "label": "Unexpected",
+    "category": "Other reviewed interpretations",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-DET",
+    "code": "DET",
+    "label": "Detected",
+    "category": "Positive / detected / reactive",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-SYN-R",
+    "code": "SYN-R",
+    "label": "Synergy - resistant",
+    "category": "Antimicrobial susceptibility",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-NR",
+    "code": "NR",
+    "label": "Non-reactive",
+    "category": "Negative / not detected",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-RR",
+    "code": "RR",
+    "label": "Reactive",
+    "category": "Positive / detected / reactive",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-WR",
+    "code": "WR",
+    "label": "Weakly reactive",
+    "category": "Positive / detected / reactive",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-SDD",
+    "code": "SDD",
+    "label": "Susceptible-dose dependent",
+    "category": "Antimicrobial susceptibility",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  },
+  {
+    "id": "hl7-SYN-S",
+    "code": "SYN-S",
+    "label": "Synergy - susceptible",
+    "category": "Antimicrobial susceptibility",
+    "source": "http://terminology.hl7.org/CodeSystem/v3-ObservationInterpretation",
+    "sourceVersion": "4.0.0"
+  }
+] as const;

@@ -1,0 +1,8 @@
+import {useState} from 'react';
+import {activeClinicalIdentity,qrRequest} from '../../services/qr';
+import {getRoleDefinition} from '../../config/roles';
+export function PatientPortalLink({patientId}:{patientId:string}){
+ const {user}=activeClinicalIdentity();const [accountId,setAccountId]=useState(''),[confirmed,setConfirmed]=useState(false),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ if(!['ceo','branch_manager'].includes(getRoleDefinition(user?.role).id))return null;
+ return <details className="border rounded p-3 text-sm"><summary className="font-semibold">Link patient portal account</summary><p className="my-2">Connect this saved result to the client's login account after verifying identity. The client can find their portal account reference in their account details.</p><label>Portal account reference<input aria-label="Portal account reference" className="block w-full border rounded p-2" value={accountId} onChange={e=>{setAccountId(e.target.value);setConfirmed(false);}}/></label><label className="flex gap-2 my-2"><input type="checkbox" checked={confirmed} onChange={e=>setConfirmed(e.target.checked)}/>I verified this client owns this portal account</label><button disabled={busy||!confirmed||!accountId.trim()} className="border rounded p-2 disabled:opacity-40" onClick={async()=>{setBusy(true);try{await qrRequest('/portal/link',{patientId,accountId:accountId.trim(),identityConfirmed:true});setMessage('Patient portal account linked. The client can refresh their result list.');}catch(error:any){setMessage(error.message);}finally{setBusy(false);}}}>Link verified patient account</button>{message&&<p role="status" className="mt-2">{message}</p>}</details>;
+}

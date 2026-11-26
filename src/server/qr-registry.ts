@@ -1,3 +1,6 @@
+import {getRoleDefinition} from '../config/roles';
+import {ResultNotifications,type DeliveryJob} from './result-notifications';
+import {normalizeNigerianWhatsAppPhone} from '../config/roles';
 import {validatePublishedReport} from './report-validation';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -20,13 +23,50 @@ export class QRRegistry {
      const order=input.order;
      const key=digest(scope.tenantId+'|'+scope.branchId+'|'+input.kind+'|'+order.id);
      const previous=data.reports[key];
-     const payload={kind:input.kind,order:{id:order.id,patientId:order.patientId,patientName:order.patientName,mrn:order.mrn,testName:order.testName,accessionNumber:order.accessionNumber,reportNumber:order.reportNumber,orderStatus:order.orderStatus,results:order.results,clinicalInterpretation:order.clinicalInterpretation,likelyIssue:order.likelyIssue,clinicalIndication:order.clinicalIndication,techniqueNotes:order.techniqueNotes,findingsNotes:order.findingsNotes,impressionNotes:order.impressionNotes,recommendationsNotes:order.recommendationsNotes,findingsHtml:order.findingsHtml,reportApproval:order.reportApproval,releasedAt:order.releasedAt},patient:{id:order.patientId,fullName:order.patientName||input.patient?.fullName,mrn:order.mrn||input.patient?.mrn}};
+     const payload={kind:input.kind,order:{id:order.id,patientId:order.patientId,patientName:order.patientName,mrn:order.mrn,testName:order.testName,accessionNumber:order.accessionNumber,reportNumber:order.reportNumber,orderStatus:order.orderStatus,results:order.results,clinicalInterpretation:order.clinicalInterpretation,likelyIssue:order.likelyIssue,clinicalIndication:order.clinicalIndication,techniqueNotes:order.techniqueNotes,findingsNotes:order.findingsNotes,impressionNotes:order.impressionNotes,recommendationsNotes:order.recommendationsNotes,findingsHtml:order.findingsHtml,findingCode:order.findingCode,referenceSource:order.referenceSource,assayMethod:order.assayMethod,referenceReviewed:order.referenceReviewed,reportApproval:order.reportApproval,releasedAt:order.releasedAt},patient:{id:order.patientId,fullName:order.patientName||input.patient?.fullName,mrn:order.mrn||input.patient?.mrn}};
      const contentDigest=digest(JSON.stringify(payload));
      if(previous){if(previous.contentDigest!==contentDigest)throw new CatalogueError(409,'A published report is immutable. Create and approve an amended report.');if(previous.revokedAt)throw new CatalogueError(410,'This report has been withdrawn.');return {token:previous.token,publishedAt:previous.publishedAt,contentDigest};}
      const record={...payload,scope,token:randomBytes(32).toString('base64url'),publishedAt:new Date().toISOString(),contentDigest,revokedAt:null};
      data.reports[key]=record;data.outbox.push({entity:'verified_report',key,payload:record,state:'pending_astra_connection'});
      return {token:record.token,publishedAt:record.publishedAt,contentDigest};
    });
+ }
+ async linkPatientAccount(scope:CatalogueScope,actor:CatalogueActor,input:any){
+   if(!['ceo','branch_manager'].includes(getRoleDefinition(actor.role).id))throw new CatalogueError(403,'A facility administrator must link patient portal accounts.');
+   if(input.identityConfirmed!==true||!input.accountId||!input.patientId||String(input.accountId).length>160||String(input.patientId).length>160)throw new CatalogueError(400,'Confirm the patient identity and portal account reference.');
+   return this.transaction(data=>{const known=Object.values(data.reports).some((r:any)=>r.scope.tenantId===scope.tenantId&&r.scope.branchId===scope.branchId&&r.order.patientId===input.patientId);if(!known)throw new CatalogueError(404,'Save a result for this patient at this facility before linking the portal account.');
+     data.patientLinks=data.patientLinks||{};const key=digest(scope.tenantId+'|'+scope.branchId+'|'+input.accountId);const previous=data.patientLinks[key];if(previous&&previous.patientId!==input.patientId)throw new CatalogueError(409,'This account is already linked to another patient. Resolve the identity record before changing the link.');
+     data.patientLinks[key]={patientId:input.patientId,accountId:input.accountId,scope,linkedBy:actor.id,linkedAt:previous?.linkedAt||new Date().toISOString()};data.outbox.push({entity:'patient_portal_link',payload:data.patientLinks[key],state:'pending_astra_connection'});return {linked:true};
+   });
+ }
+ async patientReports(scope:CatalogueScope,actor:CatalogueActor){
+   if(!/patient/i.test(actor.role))throw new CatalogueError(403,'Use a linked patient account to view patient results.');
+   const data=await this.read();const patientId=data.patientLinks?.[digest(scope.tenantId+'|'+scope.branchId+'|'+actor.id)]?.patientId||actor.id;return Object.values(data.reports).filter((r:any)=>r.scope.tenantId===scope.tenantId&&r.scope.branchId===scope.branchId&&r.order.patientId===patientId&&!r.revokedAt).map((report:any)=>({...report,portalAccountId:actor.id}));
+ }
+ async prepareDelivery(scope:CatalogueScope,actor:CatalogueActor,token:string,order:any,siteOrigin:string){
+   return this.transaction(data=>{
+     const report:any=Object.values(data.reports).find((r:any)=>r.token===token&&r.scope.tenantId===scope.tenantId&&r.scope.branchId===scope.branchId);
+     if(!report||report.order.reportApproval.signerId!==actor.id||report.order.reportApproval.reportDigest!==order.reportApproval.reportDigest)throw new CatalogueError(403,'Delivery requires the saved approved report.');
+     let signed:any;try{signed=JSON.parse(report.order.reportApproval.reportSnapshot);}catch{throw new CatalogueError(400,'Invalid saved approval.');}
+     data.deliveries=data.deliveries||{};
+     for(const channel of ['email','whatsapp'] as const){
+       if(!(channel==='email'?signed.sendEmail:signed.sendWhatsApp))continue;
+       const to=channel==='email'?String(signed.patientEmail||'').trim():normalizeNigerianWhatsAppPhone(signed.patientPhone).digits;
+       const id=digest(report.token+'|'+channel);
+       if(!data.deliveries[id]){data.deliveries[id]={id,channel,to,url:siteOrigin+'/verify/'+token,token,scope,status:'pending_configuration',createdAt:new Date().toISOString()};data.outbox.push({entity:'result_notification',payload:data.deliveries[id],scope,state:'pending_astra_connection'});}
+     }
+     return Object.values(data.deliveries).filter((job:any)=>job.token===token);
+   });
+ }
+ async attemptDelivery(token:string,sender:ResultNotifications){
+   const data=await this.read();const ids=Object.values(data.deliveries||{}).filter((job:any)=>job.token===token).map((job:any)=>job.id);
+   for(const id of ids){
+     const job=await this.transaction(state=>{const job=state.deliveries?.[id];if(!job||!sender.configured(job.channel)||!['pending_configuration','pending_public_https','queued'].includes(job.status))return null;job.status='sending';return {...job};});
+     if(!job)continue;
+     const result=await sender.send(job);
+     await this.transaction(state=>{Object.assign(state.deliveries[id],result,{updatedAt:new Date().toISOString()});state.outbox.push({entity:'result_notification',payload:{...state.deliveries[id]},scope:state.deliveries[id].scope,state:'pending_astra_connection'});return null;});
+   }
+   return Object.values((await this.read()).deliveries||{}).filter((job:any)=>job.token===token);
  }
  async verify(token:string){if(!tokenPattern.test(token))throw new CatalogueError(404,'Report not found.');const data=await this.read();const report:any=Object.values(data.reports).find((r:any)=>r.token===token);if(!report)throw new CatalogueError(404,'Report not found.');if(report.revokedAt)throw new CatalogueError(410,'This report was withdrawn and is no longer valid.');const {scope,...publicReport}=report;return publicReport;}
  async revoke(scope:CatalogueScope,actor:CatalogueActor,token:string){

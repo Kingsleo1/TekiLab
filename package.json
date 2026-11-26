@@ -10,14 +10,19 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts",
+    "test": "tsx --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts tests/result-release.test.ts",
     "test:browser": "node tests/browser.mjs",
     "test:api": "node tests/api.mjs",
     "test:integration": "node tests/integrations.mjs",
     "test:qr": "node tests/qr-booking.mjs",
     "test:management": "node tests/management-imaging.mjs",
     "test:dictation": "node tests/dictation.mjs",
-    "test:staff": "node tests/staff-dialogs.mjs"
+    "test:staff": "node tests/staff-dialogs.mjs",
+    "test:rapid-release": "node tests/rapid-release.mjs",
+    "test:lab-findings": "node tests/lab-findings.mjs",
+    "test:result-api": "node tests/result-service-api.mjs",
+    "test:patient-results": "node tests/patient-results.mjs",
+    "test:native": "node --import ./scripts/native-ts-loader.mjs --test tests/workflows.test.ts tests/catalogue-qr.test.ts tests/flutterwave.test.ts tests/result-release.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

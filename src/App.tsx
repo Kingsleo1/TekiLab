@@ -300,6 +300,7 @@ function AppShell() {
   };
   useEffect(()=>{let active=true;if(currentUser?.id&&selectedBranchId!=='all')fetchCatalogueOrders(catalogueScope,currentUser).then(data=>{if(active)mergeCatalogueRecords(data);}).catch(()=>{});return()=>{active=false;};},[currentUser?.id,selectedBranchId,catalogueScope.tenantId]);
 
+
   useEffect(() => { if (catalogueSnapshot){setLabCatalog(catalogueSnapshot.items.filter(item=>item.workflow!=='imaging'));setImagingCatalog(catalogueSnapshot.items.filter(item=>item.workflow==='imaging'));} }, [catalogueSnapshot]);
   const [labOrders, setLabOrders] = useState<any[]>(() => {
     const saved = localStorage.getItem('tm_lab_orders');
@@ -691,6 +692,7 @@ function AppShell() {
     }
   }, []);
 
+  useEffect(()=>{if(!currentUser?.id||getRoleDefinition(currentUser.role).id==='patient'||selectedBranchId==='all')return;const timer=setTimeout(()=>{fetch('/api/lims/clinical-state?'+new URLSearchParams(catalogueScope),{method:'POST',headers:{'Content-Type':'application/json','X-TekiLab-Preview-Actor':encodeURIComponent(JSON.stringify({id:currentUser.id,name:currentUser.name,role:currentUser.role,permissions:currentUser.permissions||[]}))},body:JSON.stringify({snapshot:{patients,encounters,charges,queueTickets,labOrders,imagingOrders}})}).catch(()=>{});},1000);return()=>clearTimeout(timer);},[patients,encounters,charges,queueTickets,labOrders,imagingOrders,currentUser?.id,selectedBranchId,catalogueScope.tenantId]);
   const handleLogout = async () => {
     if (isSupabaseConfigured()) {
       try {

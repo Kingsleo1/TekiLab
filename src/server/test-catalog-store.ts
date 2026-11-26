@@ -90,7 +90,7 @@ export class TestCatalogueStore {
   private bundle(requestId:string,orders:any[],createdAt:string) {
     const queueTickets=orders.flatMap(order=>[
       {id:'queue-'+order.id,sourceOrderId:order.id,patientId:order.patientId,patientName:order.patientName,mrn:order.mrn,ticketNumber:order.accessionNumber,tenantId:order.tenantId,facilityId:order.facilityId,orderSource:order.orderSource||'WALK_IN',department:order.department==='Radiology'?'Radiology':'Laboratory',status:['RELEASED','Released'].includes(order.orderStatus)?'Completed':'Waiting',priority:'Normal',issuedAt:createdAt,createdAt,notes:order.testName},
-      ...(['RELEASED','Released'].includes(order.orderStatus)?[{id:'followup-'+order.id,sourceOrderId:order.id,patientId:order.patientId,patientName:order.patientName,mrn:order.mrn,ticketNumber:'REV-'+order.accessionNumber,department:'Doctor Consultation',status:'Waiting',priority:'Normal',issuedAt:createdAt,createdAt,notes:'Released result ready: '+order.testName}]:[])
+      ...(['RELEASED','Released'].includes(order.orderStatus)&&(!order.rapidWorkflow||order.consultationRequested===true)?[{id:'followup-'+order.id,sourceOrderId:order.id,patientId:order.patientId,patientName:order.patientName,mrn:order.mrn,ticketNumber:'REV-'+order.accessionNumber,department:'Doctor Consultation',status:'Waiting',priority:'Normal',issuedAt:createdAt,createdAt,notes:'Released result ready: '+order.testName}]:[])
     ]);
     const charges=orders.filter(order=>order.pricingStatus==='Quoted').map(order=>({...chargeForOrder(order,order.department==='Radiology'),paymentStatus:order.billingStatus==='Paid'?'Paid':'Unpaid'}));
     return {requestId,orders,charges,queueTickets,createdAt,persistence:'local-database',astraSync:'held'};

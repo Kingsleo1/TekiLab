@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TekiLab LIMS Modular SaaS Database Schema (DataStax Astra DB & Supabase)",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "keyspace": "default_keyspace",
   "collections": {
     "tenant_configurations": {
@@ -903,9 +903,270 @@
           }
         }
       }
+    },
+    "patients": {
+      "description": "Facility patient records, keyed by linked patient identity.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id",
+          "branch_id"
+        ],
+        "clusteringColumns": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "branch_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "encounters": {
+      "description": "Signed consultations and clinical handoffs.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id",
+          "branch_id"
+        ],
+        "clusteringColumns": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "branch_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "charges": {
+      "description": "Patient charge and payment ledger.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id",
+          "branch_id"
+        ],
+        "clusteringColumns": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "branch_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "queue_tickets": {
+      "description": "Department routing and opted-in consultation follow-up.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id",
+          "branch_id"
+        ],
+        "clusteringColumns": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "branch_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "result_notifications": {
+      "description": "Consent-bound notification jobs with provider acceptance states.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id",
+          "branch_id"
+        ],
+        "clusteringColumns": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "branch_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "clinical_snapshots": {
+      "description": "Clinical record snapshots for staged Astra reconciliation.",
+      "primaryKey": {
+        "partitionKey": [
+          "tenant_id",
+          "branch_id"
+        ],
+        "clusteringColumns": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "tenant_id",
+          "branch_id"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "tenant_id": {
+            "type": "string"
+          },
+          "branch_id": {
+            "type": "string"
+          },
+          "payload": {
+            "type": "object"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      }
+    },
+    "patient_portal_links": {
+      "description": "Explicitly verified administrator links between a portal account and facility patient identity; no name matching.",
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "accountId",
+          "patientId",
+          "scope",
+          "linkedBy"
+        ],
+        "properties": {
+          "accountId": {
+            "type": "string"
+          },
+          "patientId": {
+            "type": "string"
+          },
+          "scope": {
+            "type": "object"
+          },
+          "linkedBy": {
+            "type": "string"
+          }
+        }
+      }
     }
   },
   "roleCatalogueSource": "src/config/roles.ts",
   "paymentProvider": "flutterwave",
-  "migrationStatus": "held_pending_local_review"
+  "migrationStatus": "held_pending_local_review",
+  "astraDataApi": {
+    "mode": "document-collections",
+    "apiPath": "/api/json/v1/{keyspace}",
+    "writesRequire": "TEKILAB_ENABLE_ASTRA_WRITES=true",
+    "sync": "local transactional outbox to server-side Data API; production shared reads remain pending",
+    "credentialStorage": "server environment or temporary server memory; never browser storage"
+  }
 }
