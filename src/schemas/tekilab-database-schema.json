@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "TekiLab LIMS Modular SaaS Database Schema (DataStax Astra DB & Supabase)",
-  "version": "3.2.0",
+  "title": "TekiLab LIMS Modular SaaS Database Schema (DataStax Astra Data API)",
+  "version": "3.3.0",
   "keyspace": "default_keyspace",
   "collections": {
     "tenant_configurations": {
@@ -1154,6 +1154,80 @@
           },
           "linkedBy": {
             "type": "string"
+          }
+        }
+      }
+    },
+    "system_settings": {
+      "description": "Public platform branding and patient-facing content. Managed only by the platform administrator; credentials and clinical records are excluded.",
+      "primaryKey": {
+        "partitionKey": [
+          "id"
+        ]
+      },
+      "jsonSchema": {
+        "type": "object",
+        "required": [
+          "id",
+          "settings",
+          "revision",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "const": "tekilab-site-settings-v1"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "facilityName": {
+                "type": "string"
+              },
+              "tagline": {
+                "type": "string"
+              },
+              "logoUrl": {
+                "type": "string"
+              },
+              "accentColor": {
+                "type": "string"
+              },
+              "supportEmail": {
+                "type": "string"
+              },
+              "supportPhone": {
+                "type": "string"
+              },
+              "address": {
+                "type": "string"
+              },
+              "openingHours": {
+                "type": "string"
+              },
+              "bookingTitle": {
+                "type": "string"
+              },
+              "bookingNotice": {
+                "type": "string"
+              },
+              "footerText": {
+                "type": "string"
+              }
+            }
+          },
+          "revision": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "entity": {
+            "type": "string",
+            "description": "Optimistic concurrency revision tag stored in the existing indexed payload.entity field."
           }
         }
       }

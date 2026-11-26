@@ -1,3 +1,4 @@
+import {useSiteSettings} from '../hooks/useSiteSettings';
 import {useEffect,useRef,useState} from 'react';
 import QRCode from 'qrcode';
 import {qrRequest} from '../services/qr';
@@ -11,6 +12,7 @@ function QRImage({value}:{value:string}){
  return src?<img src={src} alt="Scannable TekiLab QR code" width="200" height="200"/>:null;
 }
 export function OnlineBooking({initialPatient}:{initialPatient?:any}){
+ const {settings:siteSettings}=useSiteSettings();
  const [config,setConfig]=useState<any>(null),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [ids,setIds]=useState<string[]>([]),[name,setName]=useState(initialPatient?.fullName||''),[phone,setPhone]=useState(initialPatient?.phone||''),[email,setEmail]=useState(initialPatient?.email||'');
  const [date,setDate]=useState(new Date().toISOString().slice(0,10)),[time,setTime]=useState('10:00'),[receipt,setReceipt]=useState<any>(null);
@@ -35,7 +37,8 @@ export function OnlineBooking({initialPatient}:{initialPatient?:any}){
   {error&&<p role="alert">{error}</p>}
  </section>;
  return <form onSubmit={book} className="space-y-5 bg-white p-4 sm:p-6 rounded-xl border">
-  <h1 className="text-3xl font-black">Book laboratory tests</h1>
+  <h1 className="text-3xl font-black" style={{color:siteSettings.accentColor}}>{siteSettings.bookingTitle}</h1>
+  <p className="text-sm text-slate-600 whitespace-pre-wrap">{siteSettings.bookingNotice}</p>
   <p className="text-sm text-slate-600">Select one or more tests. Provider fees are references; confirm the facility fee, test method and availability. Payment is handled separately.</p>
   {error&&<p role="alert" className="text-red-700">{error}</p>}
   <div className="grid sm:grid-cols-2 gap-3">
@@ -50,6 +53,8 @@ export function OnlineBooking({initialPatient}:{initialPatient?:any}){
  </form>;
 }
 export function ClinicalPublicPages(){
+ const {settings:siteSettings}=useSiteSettings();
+ useEffect(()=>{document.title=siteSettings.facilityName+" — Patient services";},[siteSettings.facilityName]);
  const path=window.location.pathname,token=path.split('/')[2],isResult=path.startsWith('/verify/');
  const [record,setRecord]=useState<any>(null),[error,setError]=useState(''),[downloadError,setDownloadError]=useState('');
  useEffect(()=>{
@@ -60,7 +65,7 @@ export function ClinicalPublicPages(){
   return()=>{meta.remove();};
  },[path]);
  return <main className="max-w-4xl mx-auto px-3 py-6 sm:py-10 space-y-5">
-  <header className="flex justify-between items-center print:hidden"><a href="/" className="font-black text-2xl text-blue-700">TekiLab</a><a href="/book" className="text-blue-700">Book tests</a></header>
+  <header className="flex justify-between items-center print:hidden"><a href="/" className="font-black text-2xl flex items-center gap-3" style={{color:siteSettings.accentColor}}>{siteSettings.logoUrl&&<img src={siteSettings.logoUrl} alt="" className="w-24 h-12 object-contain" referrerPolicy="no-referrer"/>}{siteSettings.facilityName}</a><a href="/book" className="text-blue-700">Book tests</a></header>
   {path.replace(/\/$/,'')==='/book'?<OnlineBooking/>:error?<section role="alert" className="border border-red-300 p-6 rounded-xl"><h1 className="text-2xl font-black">Verification unavailable</h1><p>{error}</p></section>:!record?<p role="status">Checking this record…</p>:isResult?<article className="bg-white border rounded-xl p-4 sm:p-7 space-y-4">
    <h1 className="text-2xl font-black text-emerald-800">Authentic approved result</h1><p>This is the report published by this facility. Authenticity confirms the recorded approval; clinical interpretation remains the reviewing professional’s responsibility.</p>
    <dl className="grid sm:grid-cols-2 gap-2">{[['Patient',record.patient.fullName],['MRN',record.patient.mrn||'Not recorded'],['Test',record.order.testName],['Report',record.order.reportNumber||record.order.accessionNumber||record.order.id]].map(([label,value])=><div key={label}><dt>{label}</dt><dd className="font-bold">{value}</dd></div>)}</dl>
@@ -72,5 +77,6 @@ export function ClinicalPublicPages(){
    <p className="text-sm text-slate-600">Anyone possessing this link can view the full result. Share it only with intended recipients.</p>
    <div className="flex flex-wrap gap-3 print:hidden"><Button onClick={()=>downloadVerifiedReport(record).catch(e=>setDownloadError(e.message))}>Download verified result PDF</Button><Button variant="outline" onClick={()=>window.print()}>Print verified result</Button></div>{downloadError&&<p role="alert">{downloadError}</p>}
   </article>:<section className="p-6 bg-white rounded-xl border space-y-3"><h1 className="text-2xl font-black">Valid TekiLab booking</h1><p>{record.number}</p><p>{record.status} · {record.paymentStatus}{record.paymentMode==='test'?' (test transaction — not a real payment)':''}</p><p>{record.appointmentDate} {record.appointmentTime}</p><p>Present this QR at reception. Staff will confirm your identity and validate the tests.</p>{record.paymentStatus!=='Paid'&&record.onlineCheckoutAvailable&&<Button onClick={async()=>{try{const checkout=await qrRequest('/booking/'+token+'/payment/initialize',{});window.location.assign(checkout.url);}catch(error:any){setDownloadError(error.message);}}}>Pay online (test checkout)</Button>}{downloadError&&<p role="alert">{downloadError}</p>}<QRImage value={window.location.href.split('?')[0]}/></section>}
+ <footer className="border-t pt-5 text-sm text-slate-600 space-y-1 print:hidden"><p className="font-semibold">{siteSettings.facilityName} · {siteSettings.tagline}</p>{siteSettings.address&&<p>{siteSettings.address}</p>}{siteSettings.openingHours&&<p>{siteSettings.openingHours}</p>}<p>{siteSettings.supportPhone}{siteSettings.supportPhone&&siteSettings.supportEmail?" · ":""}{siteSettings.supportEmail}</p><p className="text-xs">{siteSettings.footerText}</p></footer>
  </main>;
 }

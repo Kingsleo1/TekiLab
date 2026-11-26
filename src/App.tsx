@@ -1,3 +1,4 @@
+import {useSiteSettings} from './hooks/useSiteSettings';
 import { FinancialOverview } from './components/dashboard/FinancialOverview';
 import { fetchCatalogueOrders, saveCatalogueRecord, confirmCataloguePayment } from './services/test-catalog';
 import { useState, useEffect, lazy, Suspense } from 'react';
@@ -199,6 +200,7 @@ function AppShell() {
   const { unreadCount } = useNotifications();
   const [isCommHubOpen, setIsCommHubOpen] = useState(false);
   const pwa = usePWA();
+  const {settings:siteSettings} = useSiteSettings();
 
   useEffect(() => {
     if (typeof document !== 'undefined') {
@@ -483,7 +485,7 @@ function AppShell() {
     }
     if (isAdminRoute && !getUrlTenantSlug()) {
       manifestEl.href = '/admin-manifest.json';
-      document.title = 'Teki Med — Consolidated Healthcare SaaS Super Admin';
+      document.title = `${siteSettings.facilityName} — Platform Administration`;
       applyDynamicFavicon(null);
     } else if (activeTenant) {
       manifestEl.href = '/manifest.json';
@@ -491,10 +493,10 @@ function AppShell() {
       applyDynamicFavicon(activeTenant.logo);
     } else {
       manifestEl.href = '/manifest.json';
-      document.title = 'Teki Med — Unified Healthcare Management Platform';
+      document.title = `${siteSettings.facilityName} — ${siteSettings.tagline}`;
       applyDynamicFavicon(null);
     }
-  }, [isAdminRoute, activeTenant, activeTenant?.logo, activeTenant?.companyName]);
+  }, [isAdminRoute, activeTenant, activeTenant?.logo, activeTenant?.companyName,siteSettings.facilityName,siteSettings.tagline]);
 
   // Ensure non-admin sessions on /admin route show Admin Login rather than staff dashboard
   useEffect(() => {
@@ -1039,8 +1041,8 @@ function AppShell() {
     !activeTenant?.logo?.startsWith('/logo.png') &&
     !activeTenant?.logo?.startsWith('/favicon.png') &&
     !activeTenant?.logo?.startsWith('/favicon-1.png');
-  const activeDashboardLogo = hasCustomCompanyLogo ? activeTenant!.logo! : '/logo.png?v=5';
-  const activeCollapsedIcon = hasCustomCompanyLogo ? activeTenant!.logo! : '/favicon.png?v=5';
+  const activeDashboardLogo = hasCustomCompanyLogo ? activeTenant!.logo! : (siteSettings.logoUrl || '/logo.png?v=5');
+  const activeCollapsedIcon = hasCustomCompanyLogo ? activeTenant!.logo! : (siteSettings.logoUrl || '/favicon.png?v=5');
 
   return (
     <div className="fixed inset-0 h-dvh w-full max-w-full overflow-hidden bg-slate-50 flex font-sans selection:bg-blue-100 selection:text-blue-900">
@@ -1793,6 +1795,7 @@ function AppShell() {
                       {view === 'admin_settings' && (
                         <SystemSettingsView 
                           currentUser={currentUser} 
+                          onNavigate={(target) => { if(hasAccessToView(target)) setView(target as DashView); else toast.error("Your account cannot access this page."); }}
                           onUserUpdate={(u) => setCurrentUser(u)} 
                           selectedBranchId={selectedBranchId}
                         />

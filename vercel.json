@@ -6,6 +6,10 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/api/site-settings",
+      "destination": "/api/platform-settings"
+    },
+    {
       "source": "/api/lims/qr/results/:token",
       "destination": "/api/result-verification?token=:token"
     },
@@ -20,6 +24,9 @@
   ],
   "functions": {
     "api/result-verification.ts": {
+      "maxDuration": 30
+    },
+    "api/platform-settings.ts": {
       "maxDuration": 30
     }
   },

@@ -23,21 +23,32 @@ export class AstraManagement{
  async initialize(){if(this.env.TEKILAB_ENABLE_ASTRA_WRITES!=='true')throw new CatalogueError(423,'Astra writes are held. Enable TEKILAB_ENABLE_ASTRA_WRITES on the server after schema review.');const current=await this.request({findCollections:{}});const existing=(current.status?.collections||[]).map((x:any)=>typeof x==='string'?x:x.name);const name=this.collection(),created=[];if(!existing.includes(name)){await this.request({createCollection:{name,options:{indexing:{allow:['entity','tenant_id','branch_id','payload.token','payload.entity']}}}});created.push(name);}return {createdCollections:created,...await this.test()};}
  private async events(){
   const directory=path.join(this.root,'data/local-preview'),files:string[]=[];
-  for(const part of ['catalogue','clinical-state']){try{for(const file of await fs.readdir(path.join(directory,part)))if(/^[a-f0-9]{64}\.json$/.test(file))files.push(part+'/'+file);}catch(error:any){if(error.code!=='ENOENT')throw error;}}
+  for(const part of ['catalogue','clinical-state','site-settings']){try{for(const file of await fs.readdir(path.join(directory,part)))if(/^[a-f0-9]{64}\.json$/.test(file))files.push(part+'/'+file);}catch(error:any){if(error.code!=='ENOENT')throw error;}}
   try{await fs.access(path.join(directory,'qr-registry.json'));files.push('qr-registry.json');}catch{}
   let acknowledgements:any={};try{acknowledgements=JSON.parse(await fs.readFile(path.join(directory,'astra-sync-ack.json'),'utf8'));}catch(error:any){if(error.code!=='ENOENT')throw error;}
   const events:any[]=[];for(const file of files){const data=JSON.parse(await fs.readFile(path.join(directory,file),'utf8'));for(const [index,event] of (data.outbox||[]).entries()){const id=hash('record-store-v2|'+this.collection()+'|'+file+'|'+index+'|'+JSON.stringify(event));if(!acknowledgements[id])events.push({id,event});}}return events;
  }
  async sync(){
   if(this.env.TEKILAB_ENABLE_ASTRA_WRITES!=='true')throw new CatalogueError(423,'Astra writes are held until enabled on the server.');if(this.syncing)throw new CatalogueError(409,'A sync is already running.');this.syncing=true;
-  try{const mapping:Record<string,string>={verified_report:'approved_reports',verified_report_revocation:'audit_events',test_catalogue:'test_catalogue',lab_order:'diagnostic_orders',online_booking:'online_bookings',online_payment:'payment_transactions',clinical_state:'clinical_snapshots',result_notification:'result_notifications',patient_portal_link:'patient_portal_links'};const ackFile=path.join(this.root,'data/local-preview/astra-sync-ack.json');let acknowledgements:any={};try{acknowledgements=JSON.parse(await fs.readFile(ackFile,'utf8'));}catch(error:any){if(error.code!=='ENOENT')throw error;}let synced=0;
+  try{const mapping:Record<string,string>={verified_report:'approved_reports',verified_report_revocation:'audit_events',test_catalogue:'test_catalogue',lab_order:'diagnostic_orders',online_booking:'online_bookings',online_payment:'payment_transactions',clinical_state:'clinical_snapshots',result_notification:'result_notifications',patient_portal_link:'patient_portal_links',system_settings:'system_settings'};const ackFile=path.join(this.root,'data/local-preview/astra-sync-ack.json');let acknowledgements:any={};try{acknowledgements=JSON.parse(await fs.readFile(ackFile,'utf8'));}catch(error:any){if(error.code!=='ENOENT')throw error;}let synced=0;
    for(const {id,event} of (await this.events()).slice(0,200)){
     const payload=event.payload||event,scope=payload.scope||event;
     const clinicalCollections:Record<string,string>={patients:'patients',encounters:'encounters',charges:'charges',queueTickets:'queue_tickets',labOrders:'diagnostic_orders',imagingOrders:'diagnostic_orders'};
     const collection=event.entity==='clinical_state'?(clinicalCollections[payload.kind]||'clinical_snapshots'):(mapping[event.entity]||'audit_events');
     const documents=event.entity==='clinical_state'&&Array.isArray(payload.records)?[...payload.records,...(payload.deletedIds||[]).map((id:string)=>({id,deletedAt:event.at}))]:[payload];
     for(const document of documents){
-      const recordId=hash(collection+'|'+String(scope.tenantId||'')+'|'+String(scope.branchId||'')+'|'+String(document.id||event.key||id));
+      const recordId=event.entity==='system_settings'?'tekilab-site-settings-v1':hash(collection+'|'+String(scope.tenantId||'')+'|'+String(scope.branchId||'')+'|'+String(document.id||event.key||id));
+      if(event.entity==='system_settings'){
+       const current=await this.request({findOne:{filter:{_id:recordId}}},this.collection());
+       if(!current.data||!('document' in current.data))throw new CatalogueError(502,'Astra did not confirm the settings lookup.');
+       const existing=current.data.document;
+       if(existing?.payload?.revision===document.revision&&JSON.stringify(existing.payload.settings)===JSON.stringify(document.settings))continue;
+       if((existing?.payload?.revision||0)!==document.revision-1)throw new CatalogueError(409,'Site settings conflict with the shared version. Review the shared settings before syncing this local draft.');
+       const replacement={_id:recordId,entity:'system_settings',payload:document,updated_at:event.at};
+       const saved=await this.request(existing?{findOneAndReplace:{filter:{_id:recordId,'payload.entity':existing.payload.entity||{$exists:false}},replacement,options:{returnDocument:'after'}}}:{insertOne:{document:replacement}},this.collection());
+       if(existing?!saved.data?.document:!saved.status?.insertedIds?.length)throw new CatalogueError(409,'Shared settings synchronization was not confirmed.');
+       continue;
+      }
       await this.request({findOneAndReplace:{filter:{_id:recordId},replacement:{entity:collection,event_id:id,tenant_id:scope.tenantId||null,branch_id:scope.branchId||null,payload:document,updated_at:event.at||new Date().toISOString()},options:{upsert:true,returnDocument:'after'}}},this.collection());
     }
     acknowledgements[id]=new Date().toISOString();await fs.mkdir(path.dirname(ackFile),{recursive:true});const temporary=ackFile+'.'+randomUUID()+'.tmp';await fs.writeFile(temporary,JSON.stringify(acknowledgements),{mode:0o600});await fs.rename(temporary,ackFile);synced++;

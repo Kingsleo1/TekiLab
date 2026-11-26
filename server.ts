@@ -1,3 +1,4 @@
+import {createSiteSettingsRouter} from './src/server/site-settings-router';
 import {createAstraManagementRouter} from './src/server/astra-management';
 import {createClinicalStateRouter} from './src/server/clinical-state';
 import { createQRRouter } from './src/server/qr-router';
@@ -522,6 +523,7 @@ async function startServer() {
   app.use('/api/lims/test-catalog',catalogueRouter);
   app.use('/api/lims/qr',createQRRouter(__dirname,previewMode,(catalogueRouter as any).catalogueStore));
   app.use('/api/lims/admin/astra',createAstraManagementRouter(__dirname,previewMode));
+  app.use('/api/site-settings',createSiteSettingsRouter(__dirname,previewMode));
   app.use('/api/lims/clinical-state',createClinicalStateRouter(__dirname,previewMode));
   app.get('/api/preview/status', (_req, res) => res.json({ previewMode, databaseWrites: !previewMode || process.env.TEKILAB_ENABLE_ASTRA_WRITES==='true', externalAI: !previewMode }));
 
